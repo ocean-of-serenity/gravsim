@@ -6,5 +6,5 @@ in vec4 v_color;
 uniform float time;
 
 void main() {
-    gl_FragColor = vec4(abs(cos(time)) * v_color.xyz, v_color.w);
+    gl_FragColor = vec4(v_color.xyz * abs(sin(time)), 1.0);
 }

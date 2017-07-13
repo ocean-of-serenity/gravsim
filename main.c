@@ -8,22 +8,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <iso646.h>
 
 
-void debug(const char* debug_text) {
-    printf("%s\n", debug_text);
-}
-
-
-const char* load_shader(const char* file_name) {
+const char* load_shader_source(const char* file_name) {
     FILE* file = fopen(file_name, "r");
 
     if( file == NULL ) {
-        char* fmt_msg = "Could not open file '%s':";
-        char msg[strlen(file_name) + strlen(fmt_msg) + 2];
-        sprintf(msg, fmt_msg, file_name);
-        perror(msg);
-        return NULL;
+        printf("Could not open file '%s':\n", file_name);
+        perror("Error");
+
+        exit(1);
     }
 
     fseek(file, 0, SEEK_END);
@@ -39,6 +34,98 @@ const char* load_shader(const char* file_name) {
 }
 
 
+GLuint create_compiled_shader_from(GLenum shaderType, const char* file_name) {
+    GLuint id = glCreateShader(shaderType);
+
+    if( !id ) {
+        printf("Could not create shader\n");
+        perror("Error");
+
+        exit(1);
+    }
+
+    const char* source = load_shader_source(file_name);
+    glShaderSource(id, 1, &source, NULL);
+
+    glCompileShader(id);
+
+    GLint compile_status;
+    glGetShaderiv(id, GL_COMPILE_STATUS, &compile_status);
+
+    if( compile_status == GL_FALSE ) {
+        GLint info_log_length;
+        glGetShaderiv(id, GL_INFO_LOG_LENGTH, &info_log_length);
+
+        char info_log[info_log_length];
+        GLsizei temp;
+        glGetShaderInfoLog(id, info_log_length, &temp, info_log);
+
+        printf(
+                "Could not compile shader from '%s':\n%s\nsource code:\n%s\n",
+                file_name,
+                info_log,
+                source
+        );
+        perror("Error");
+
+        free((void*) source);
+
+        exit(1);
+    }
+
+    free((void*) source);
+
+    return id;
+}
+
+
+GLuint create_linked_program_with(
+        GLuint vertex_shader_id,
+        GLuint fragment_shader_id
+    ) {
+    GLuint id = glCreateProgram();
+    
+    if( !id ) {
+        printf("Could not create program\n");
+        perror("Error");
+
+        exit(1);
+    }
+
+    glAttachShader(id, vertex_shader_id);
+    glAttachShader(id, fragment_shader_id);
+
+    glLinkProgram(id);
+
+    glDetachShader(id, vertex_shader_id);
+    glDetachShader(id, fragment_shader_id);
+
+    GLint validate_status;
+    glGetProgramiv(id, GL_VALIDATE_STATUS, &validate_status);
+
+    GLint link_status;
+    glGetProgramiv(id, GL_LINK_STATUS, &link_status);
+
+    if( validate_status == GL_FALSE or link_status == GL_FALSE ) {
+        GLint info_log_length;
+        glGetProgramiv(id, GL_INFO_LOG_LENGTH, &info_log_length);
+
+        char info_log[info_log_length];
+        GLsizei temp;
+        glGetProgramInfoLog(id, info_log_length, &temp, info_log);
+
+        printf("Could not link program:\n%s\n", info_log);
+        perror("Error");
+
+        glDeleteProgram(id);
+
+        exit(1);
+    }
+
+    return id;
+}
+
+
 const uint8_t* load_png(const char* file_name) {
     FILE* file = fopen(file_name, "rb");
 
@@ -46,8 +133,10 @@ const uint8_t* load_png(const char* file_name) {
         char* fmt_msg = "Could not open file '%s':";
         char msg[strlen(file_name) + strlen(fmt_msg) + 2];
         sprintf(msg, fmt_msg, file_name);
-        perror(msg);
-        return NULL;
+        printf("Could not open file '%s':\n", file_name);
+        perror("Error");
+
+        exit(1);
     }
 
     fseek(file, 0, SEEK_END);
@@ -87,7 +176,13 @@ void set_vertex_position(Vertex* vertex, float x, float y, float z) {
     vertex->position.z = z;
 }
 
-void set_vertex_color(Vertex* vertex, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+void set_vertex_color(
+        Vertex* vertex,
+        uint8_t r,
+        uint8_t g,
+        uint8_t b,
+        uint8_t a
+) {
     vertex->color.r = r;
     vertex->color.g = g;
     vertex->color.b = b;
@@ -96,11 +191,10 @@ void set_vertex_color(Vertex* vertex, uint8_t r, uint8_t g, uint8_t b, uint8_t a
 
 
 int main(int argc, char** argv) {
-    debug("initializing ...");
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_Window* window = SDL_CreateWindow(
-            "gl_test",
+            "opengl_test",
             SDL_WINDOWPOS_CENTERED,
             SDL_WINDOWPOS_CENTERED,
             1280,
@@ -119,65 +213,72 @@ int main(int argc, char** argv) {
     SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE, 32);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-    GLint shader_compile_status;
-    GLint shader_info_log_length;
-    GLsizei temp;
+    GLuint vertex_shader_id = create_compiled_shader_from(
+            GL_VERTEX_SHADER,
+            "vertex_shader.glsl"
+    );
+    GLuint fragment_shader_id = create_compiled_shader_from(
+            GL_FRAGMENT_SHADER,
+            "fragment_shader.glsl"
+    );
 
-    debug("vertex");
-    GLuint vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
-    const char* vertex_shader = load_shader("vertex_shader.glsl");
-    glShaderSource(vertex_shader_id, 1, &vertex_shader, NULL);
-    glCompileShader(vertex_shader_id);
-    glGetShaderiv(vertex_shader_id, GL_COMPILE_STATUS, &shader_compile_status);
-    glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &shader_info_log_length);
-    char vertex_info_log[shader_info_log_length];
-    glGetShaderInfoLog(vertex_shader_id, shader_info_log_length, &temp, vertex_info_log);
-    debug(vertex_info_log);
-    debug(vertex_shader);
-    if(shader_compile_status == GL_FALSE)
-        return 0;
-    free((void*) vertex_shader);
+    GLuint program_id = create_linked_program_with(
+            vertex_shader_id,
+            fragment_shader_id
+    ); 
 
-    debug("fragment");
-    GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
-    const char* fragment_shader = load_shader("fragment_shader.glsl");
-    glShaderSource(fragment_shader_id, 1, &fragment_shader, NULL);
-    glCompileShader(fragment_shader_id);
-    glGetShaderiv(fragment_shader_id, GL_COMPILE_STATUS, &shader_compile_status);
-    glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &shader_info_log_length);
-    char fragment_info_log[shader_info_log_length];
-    glGetShaderInfoLog(fragment_shader_id, shader_info_log_length, &temp, fragment_info_log);
-    debug(fragment_info_log);
-    debug(fragment_shader);
-    if(shader_compile_status == GL_FALSE)
-        return 0;
-    free((void*) fragment_shader);
-
-    GLuint program_id = glCreateProgram();
-    glAttachShader(program_id, vertex_shader_id);
-    glAttachShader(program_id, fragment_shader_id);
-    glLinkProgram(program_id);
-    glDetachShader(program_id, vertex_shader_id);
-    glDetachShader(program_id, fragment_shader_id); 
     glDeleteShader(vertex_shader_id);
     glDeleteShader(fragment_shader_id);
 
+
+    size_t polygons = 8;
+    size_t vertices = polygons * 3;
+    Vertex buffer[vertices];
+
+    size_t i = 0;
+
+    set_vertex_position(buffer + i++,  -0.25, 0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.25, 0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  0.25, 0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.5, 0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  0.5, 0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.5, -0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  0.5, -0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.25, -0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  0.25, -0.5, 0.0);
+    set_vertex_position(buffer + i++,  -0.25, -0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  -0.25, -0.5, 0.0);
+    set_vertex_position(buffer + i++,  -0.5, -0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  -0.5, -0.25, 0.0);
+    set_vertex_position(buffer + i++,  -0.5, 0.25, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    set_vertex_position(buffer + i++,  -0.5, 0.25, 0.0);
+    set_vertex_position(buffer + i++,  -0.25, 0.5, 0.0);
+    set_vertex_position(buffer + i++,  0.0, 0.0, 0.0);
+
+    for( i = 0; i < vertices; i++ ) {
+        if( i % 3 == 0 or i % 3 == 1 )
+            set_vertex_color(buffer + i,  255, 255, 0, 255);
+        else
+            set_vertex_color(buffer + i,  255, 255, 255, 255);
+    }
+
+
     GLuint buffer_id;
     glGenBuffers(1, &buffer_id);
-
-    Vertex buffer[6];
-    set_vertex_position(buffer + 0, -0.5, 0.5, 0.0);
-    set_vertex_color(buffer + 0, 255, 255, 0.0, 255);
-    set_vertex_position(buffer + 1, -0.5, -0.5, 0.0);
-    set_vertex_color(buffer + 1, 0.0, 0.0, 255, 255);
-    set_vertex_position(buffer + 2, 0.5, -0.5, 0.0);
-    set_vertex_color(buffer + 2, 255, 255, 0.0, 255);
-    set_vertex_position(buffer + 3, 0.5, -0.5, 0.0);
-    set_vertex_color(buffer + 3, 255, 255, 0.0, 255);
-    set_vertex_position(buffer + 4, 0.5, 0.5, 0.0);
-    set_vertex_color(buffer + 4, 0.0, 0.0, 255, 255);
-    set_vertex_position(buffer + 5, -0.5, 0.5, 0.0);
-    set_vertex_color(buffer + 5, 255, 255, 0.0, 255);
 
     glBindBuffer(GL_ARRAY_BUFFER, buffer_id);
     glBufferData(
@@ -191,32 +292,31 @@ int main(int argc, char** argv) {
     glBindAttribLocation(program_id, 0, "position");
     glBindAttribLocation(program_id, 1, "color");
 
-    debug("entering main loop");
-    float blub = 0;
+    float counter = 0;
     while( true ) {
         {  // event handling
             SDL_Event event;
             while( SDL_PollEvent(&event) ) {
-                switch( event.type ) {
-                    case SDL_QUIT:
-                        debug("quit event received");
-                        glDeleteBuffers(1, &buffer_id);
-                        SDL_GL_DeleteContext(context);
-                        SDL_DestroyWindow(window);
-                        SDL_Quit();
-                        return 0;
+                if( event.type == SDL_QUIT ) {
+                    glDeleteProgram(program_id);
+                    glDeleteBuffers(1, &buffer_id);
+                    SDL_GL_DeleteContext(context);
+                    SDL_DestroyWindow(window);
+                    SDL_Quit();
+                    
+                    exit(0);
                 }
             }
         }
 
         {  // drawing
-            glClearColor(0.0, 0.0, 1.0, 1.0);
+            glClearColor(0.0, 0.0, 0.0, 1.0);
             glClearDepth(1.0);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(program_id);
 
-            glUniform1f(glGetUniformLocation(program_id, "time"), blub);
+            glUniform1f(glGetUniformLocation(program_id, "time"), counter);
 
             glBindBuffer(GL_ARRAY_BUFFER, buffer_id);
             glEnableVertexAttribArray(0);
@@ -228,7 +328,7 @@ int main(int argc, char** argv) {
                     GL_FLOAT,
                     GL_FALSE,
                     sizeof(Vertex),
-                    (void*) 0
+                    (void*) offsetof(Vertex, position)
             );
             glVertexAttribPointer(
                     1,
@@ -236,10 +336,10 @@ int main(int argc, char** argv) {
                     GL_UNSIGNED_BYTE,
                     GL_TRUE,
                     sizeof(Vertex),
-                    (void*) 12
+                    (void*) offsetof(Vertex, color)
             );
 
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glDrawArrays(GL_TRIANGLES, 0, sizeof(buffer) / sizeof(Vertex));
             
             glDisableVertexAttribArray(1);
             glDisableVertexAttribArray(0);
@@ -250,8 +350,10 @@ int main(int argc, char** argv) {
             SDL_GL_SwapWindow(window);
         }
 
-        blub += 0.01;
+        counter += 0.01;
     }
+
+    return 1;
 }
 
 
