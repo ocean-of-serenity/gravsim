@@ -5,7 +5,7 @@ TARGET=main
 # optional as of yet: -lfreeglut -lglu32 -mwindows
 
 all: $(SOURCES)
-	gcc $(SOURCES) -lSDL2main -lSDL2 -lglew32 -lfreeglut -lopengl32 -lglu32 -mwindows -o $(TARGET)
+	gcc $(SOURCES) -lSDL2main -lSDL2 -lglew32 -lopengl32 -o $(TARGET)
 
 .PHONY: clean
 clean:
