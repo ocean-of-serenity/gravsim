@@ -1,10 +1,18 @@
 
 #version 450
 
-in vec4 v_color;
-
 uniform float time;
 
+in vec4 v_color;
+
+out vec4 f_color;
+
 void main() {
-    gl_FragColor = vec4(v_color.xyz * abs(sin(time)), 1.0);
+    f_color = vec4(
+            v_color.x,
+            v_color.y * abs(sin(time)),
+            v_color.z,
+            1.0
+    );
 }
+

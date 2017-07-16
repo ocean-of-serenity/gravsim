@@ -1,15 +1,15 @@
-CC=gcc
-SOURCES=main.c
+
+CC=g++
+SOURCES=main.cc
 TARGET=main
 
-# optional as of yet: -lfreeglut -lglu32 -mwindows
 
 all: $(SOURCES)
-	gcc $(SOURCES) -lSDL2main -lSDL2 -lglew32 -lopengl32 -o $(TARGET)
+	$(CC) $(SOURCES) -lglew32 -lglfw3 -lopengl32 -mwindows -o $(TARGET)
 
 .PHONY: clean
 clean:
-	-rm $(TARGET) *.exe *~
+	-rm $(TARGET)
 
 re: clean all
 
