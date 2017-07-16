@@ -13,7 +13,7 @@
 
 
 const std::vector<char> load_shader_source(const std::string& file_name) {
-    std::ifstream file(file_name, std::ios::ate);
+    std::ifstream file(file_name);
     if( !file.good() ) {
         std::cout << "Could not open file!" << std::endl;
         perror("Error");
