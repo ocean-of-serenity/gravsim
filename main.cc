@@ -18,7 +18,7 @@ const std::vector<char> load_shader_source(const std::string& file_name) {
         std::cout << "Could not open file!" << std::endl;
         perror("Error");
 
-        exit(EXIT_FAILURE);
+        std::exit(EXIT_FAILURE);
     }
 
     file.seekg(0, std::ios::end);
@@ -34,7 +34,10 @@ const std::vector<char> load_shader_source(const std::string& file_name) {
 }
 
 
-GLuint create_compiled_shader_from(GLenum shaderType, const std::string& file_name) {
+GLuint create_compiled_shader_from(
+        GLenum shaderType,
+        const std::string& file_name
+    ) {
     std::cout << ">>> Shader '" << file_name << "':" << std::endl;
 
     GLuint id = glCreateShader(shaderType);
@@ -70,7 +73,7 @@ GLuint create_compiled_shader_from(GLenum shaderType, const std::string& file_na
         std::cout << "Could not compile!" << std::endl;
         perror("Error");
 
-        exit(EXIT_FAILURE);
+        std::exit(EXIT_FAILURE);
     }
 
     return id;
@@ -88,7 +91,7 @@ GLuint create_linked_program_with(
         std::cout << "Could not create!" << std::endl;
         perror("Error");
 
-        exit(EXIT_FAILURE);
+        std::exit(EXIT_FAILURE);
     }
 
     glAttachShader(id, vertex_shader_id);
@@ -121,7 +124,7 @@ GLuint create_linked_program_with(
 
         glDeleteProgram(id);
 
-        exit(EXIT_FAILURE);
+        std::exit(EXIT_FAILURE);
     }
 
     return id;
@@ -135,7 +138,7 @@ const std::vector<uint8_t> load_png(const std::string& file_name) {
         std::cout << "Could not open file " << file_name << std::endl;
         perror("Error");
 
-        exit(EXIT_FAILURE);
+        std::exit(EXIT_FAILURE);
     }
 
     file.seekg(0, std::ios::end);
@@ -236,14 +239,19 @@ int main(int argc, char** argv) {
 
 
     size_t triangles = 128;
-    Vertex buffer[triangles + 2];  // + 2 => origin point and end/start connection
+    Vertex buffer[triangles + 2];
+    // + 2 => origin point and end/start connection
 
     glm::vec3 starting_position(0.875, 0, 0);
     buffer[0].position = glm::vec3(0, 0, 0) + starting_position;
     float segment_angle = (2 * M_PI) / triangles;
     for( size_t i = 1; i < sizeof(buffer) / sizeof(Vertex); i++ ) {
         float angle = (i - 1) * segment_angle;
-        buffer[i].position = glm::vec3(cos(angle), sin(angle), 0) * 0.125f + starting_position;
+        buffer[i].position = glm::vec3(
+                std::cos(angle),
+                std::sin(angle),
+                0
+        ) * 0.125f + starting_position;
     }
 
     buffer[0].color = glm::u8vec4(255, 255, 255, 255);
@@ -278,8 +286,14 @@ int main(int argc, char** argv) {
             GLint time_location = glGetUniformLocation(program_id, "time");
             glUniform1f(time_location, counter);
 
-            GLint position_location = glGetAttribLocation(program_id, "position");
-            GLint color_location = glGetAttribLocation(program_id, "color");
+            GLint position_location = glGetAttribLocation(
+                    program_id,
+                    "position"
+            );
+            GLint color_location = glGetAttribLocation(
+                    program_id,
+                    "color"
+            );
 
             glEnableVertexAttribArray(position_location);
             glEnableVertexAttribArray(color_location);
