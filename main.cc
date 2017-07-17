@@ -10,10 +10,12 @@
 #include <deque>
 #include <cmath>
 #include <functional>
+#include <chrono>
+#include <thread>
 
 
-const std::vector<char> load_shader_source(const std::string& file_name) {
-    std::ifstream file(file_name);
+const std::vector<char> get_file_content(const std::string& file_name) {
+    std::ifstream file(file_name, std::ios::binary);
     if( !file.good() ) {
         std::cout << "Could not open file!" << std::endl;
         perror("Error");
@@ -25,7 +27,7 @@ const std::vector<char> load_shader_source(const std::string& file_name) {
     size_t size = file.tellg();
     file.seekg(0, std::ios::beg);
 
-    std::vector<char> buffer(size + 1);
+    std::vector<char> buffer(size);
     file.read(buffer.data(), size);
 
     file.close();
@@ -49,8 +51,13 @@ GLuint create_compiled_shader_from(
         std::exit(EXIT_FAILURE);
     }
 
-    const char* source = load_shader_source(file_name).data();
-    glShaderSource(id, 1, &source, NULL);
+    const std::vector<char> buffer = get_file_content(file_name);
+    const char* source = buffer.data();
+    const int length = buffer.size();
+    std::cout << "Source code:" << std::endl;
+    std::cout << source << std::endl;
+
+    glShaderSource(id, 1, &source, &length);
 
     glCompileShader(id);
 
@@ -66,9 +73,6 @@ GLuint create_compiled_shader_from(
 
     std::cout << "Info log:" << std::endl;
     std::cout << info_log << std::endl;
-    std::cout << "Source code:" << std::endl;
-    std::cout << source << std::endl;
-
     if( compile_status == GL_FALSE ) {
         std::cout << "Could not compile!" << std::endl;
         perror("Error");
@@ -128,29 +132,6 @@ GLuint create_linked_program_with(
     }
 
     return id;
-}
-
-
-const std::vector<uint8_t> load_png(const std::string& file_name) {
-    std::ifstream file(file_name, std::ios::binary);
-
-    if( !file.good() ) {
-        std::cout << "Could not open file " << file_name << std::endl;
-        perror("Error");
-
-        std::exit(EXIT_FAILURE);
-    }
-
-    file.seekg(0, std::ios::end);
-    size_t size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<uint8_t> buffer(size);
-    file.read((char*) buffer.data(), size);
-
-    file.close();
-
-    return buffer;
 }
 
 
@@ -237,43 +218,122 @@ int main(int argc, char** argv) {
     glDeleteShader(vertex_shader_id);
     glDeleteShader(fragment_shader_id);
 
+    GLint position_location = glGetAttribLocation(program_id, "position");
+    GLint color_location = glGetAttribLocation(program_id, "color");
+
 
     size_t triangles = 128;
-    Vertex buffer[triangles + 2];
+    Vertex circle[triangles + 2];
     // + 2 => origin point and end/start connection
 
     glm::vec3 starting_position(0.875, 0, 0);
-    buffer[0].position = glm::vec3(0, 0, 0) + starting_position;
+    circle[0].position = glm::vec3(0, 0, 0) + starting_position;
     float segment_angle = (2 * M_PI) / triangles;
-    for( size_t i = 1; i < sizeof(buffer) / sizeof(Vertex); i++ ) {
+    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ ) {
         float angle = (i - 1) * segment_angle;
-        buffer[i].position = glm::vec3(
+        circle[i].position = glm::vec3(
                 std::cos(angle),
                 std::sin(angle),
                 0
         ) * 0.125f + starting_position;
     }
 
-    buffer[0].color = glm::u8vec4(255, 255, 255, 255);
-    for( size_t i = 1; i < sizeof(buffer) / sizeof(Vertex); i++ )
-        buffer[i].color = glm::u8vec4(255, 255, 0, 255);
+    circle[0].color = glm::u8vec4(255, 255, 255, 255);
+    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ )
+        circle[i].color = glm::u8vec4(255, 255, 0, 255);
 
+    GLuint circle_vbo;
+    glCreateBuffers(1, &circle_vbo);
+    glNamedBufferStorage(circle_vbo, sizeof(circle), circle, GL_DYNAMIC_STORAGE_BIT);
 
-    GLuint buffer_id;
-    glGenBuffers(1, &buffer_id);
-
-    glBindBuffer(GL_ARRAY_BUFFER, buffer_id);
-    glBufferData(
-            GL_ARRAY_BUFFER,
-            sizeof(buffer),
-            buffer,
-            GL_STATIC_DRAW
+    GLuint circle_vao;
+    glCreateVertexArrays(1, &circle_vao);
+    glBindVertexArray(circle_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, circle_vbo);
+    glVertexAttribPointer(
+            position_location,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glVertexAttribPointer(
+            color_location,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
     );
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
 
-    float counter = 0;
+    Vertex lines[6];
+    lines[0].position = glm::vec3(1, 0, 0);
+    lines[1].position = glm::vec3(-1, 0, 0);
+    lines[2].position = glm::vec3(0, 1, 0);
+    lines[3].position = glm::vec3(0, -1, 0);
+    lines[4].position = glm::vec3(0, 0, 1);
+    lines[5].position = glm::vec3(0, 0, -1);
+
+    lines[0].color = glm::u8vec4(255, 0, 0, 255);
+    lines[1].color = glm::u8vec4(0, 0, 255, 255);
+    lines[2].color = glm::u8vec4(255, 0, 0, 255);
+    lines[3].color = glm::u8vec4(0, 0, 255, 255);
+    lines[4].color = glm::u8vec4(255, 0, 0, 255);
+    lines[5].color = glm::u8vec4(0, 0, 255, 255);
+
+    GLuint lines_vao, lines_vbo;
+    glCreateBuffers(1, &lines_vbo);
+    glNamedBufferStorage(lines_vbo, sizeof(lines), lines, 0);
+
+    glCreateVertexArrays(1, &lines_vao);
+    glBindVertexArray(lines_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, lines_vbo);
+    glVertexAttribPointer(
+            position_location,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glVertexAttribPointer(
+            color_location,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
+    );
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+
+    double spf = 1.0 / 60;
     while( !glfwWindowShouldClose(window) ) {
+        double frame_start = glfwGetTime();
+
+        {  // animating
+            glm::mat3 rotate_z(
+                     std::cos(spf), std::sin(spf), 0,
+                    -std::sin(spf), std::cos(spf), 0,
+                                 0,             0, 1
+            );
+            glm::mat3 rotate_y(
+                     std::cos(spf),              0, -std::sin(spf),
+                                 0,              1,              0,
+                     std::sin(spf),              0,  std::cos(spf)
+            );
+
+            for( size_t i = 0; i < sizeof(circle) / sizeof(Vertex); i++ )
+                circle[i].position = rotate_y * circle[i].position;
+
+            glNamedBufferSubData(circle_vbo, 0, sizeof(circle), circle);
+        }
+
         {  // drawing
             glClearColor(0.0, 0.0, 0.0, 1.0);
             glClearDepth(1.0);
@@ -281,46 +341,17 @@ int main(int argc, char** argv) {
 
             glUseProgram(program_id);
 
-            glBindBuffer(GL_ARRAY_BUFFER, buffer_id);
-
-            GLint time_location = glGetUniformLocation(program_id, "time");
-            glUniform1f(time_location, counter);
-
-            GLint position_location = glGetAttribLocation(
-                    program_id,
-                    "position"
-            );
-            GLint color_location = glGetAttribLocation(
-                    program_id,
-                    "color"
-            );
-
+            glBindVertexArray(circle_vao);
             glEnableVertexAttribArray(position_location);
             glEnableVertexAttribArray(color_location);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, sizeof(circle) / sizeof(Vertex));
+            glBindVertexArray(0);
 
-            glVertexAttribPointer(
-                    position_location,
-                    3,
-                    GL_FLOAT,
-                    GL_FALSE,
-                    sizeof(Vertex),
-                    (void*) offsetof(Vertex, position)
-            );
-            glVertexAttribPointer(
-                    color_location,
-                    4,
-                    GL_UNSIGNED_BYTE,
-                    GL_TRUE,
-                    sizeof(Vertex),
-                    (void*) offsetof(Vertex, color)
-            );
-
-            glDrawArrays(GL_TRIANGLE_FAN, 0, sizeof(buffer) / sizeof(Vertex));
-            
-            glDisableVertexAttribArray(color_location);
-            glDisableVertexAttribArray(position_location);
-
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(lines_vao);
+            glEnableVertexAttribArray(position_location);
+            glEnableVertexAttribArray(color_location);
+            glDrawArrays(GL_LINES, 0, sizeof(lines) / sizeof(Vertex));
+            glBindVertexArray(0);
 
             glUseProgram(0);
 
@@ -331,7 +362,11 @@ int main(int argc, char** argv) {
             glfwPollEvents();
         }
 
-        counter += 0.01;
+        double time_surplus = spf - (glfwGetTime() - frame_start);
+        if( time_surplus > 0 )
+            std::this_thread::sleep_for(
+                    std::chrono::milliseconds((size_t) (time_surplus * 1000))
+            );
     }
 
     return EXIT_SUCCESS;
