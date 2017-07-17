@@ -180,6 +180,9 @@ int main(int argc, char** argv) {
     defer([]() -> void { glfwTerminate(); });
 
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
     GLFWwindow* window = glfwCreateWindow(720, 720, "opengl_test", NULL, NULL);
     if( !window ) {
