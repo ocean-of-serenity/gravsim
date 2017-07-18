@@ -316,10 +316,10 @@ int main(int argc, char** argv) {
 
 
     glEnable(GL_DEPTH_TEST);
-
-    glClearColor(1, 1, 1, 1);
-    glClearDepth(-1);
     glDepthFunc(GL_GREATER);
+
+    glClearColor(0, 0, 0, 1);
+    glClearDepth(-1);
 
     double spf = 1.0 / 60;
     while( !glfwWindowShouldClose(window) ) {
