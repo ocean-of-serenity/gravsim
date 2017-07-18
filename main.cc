@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     Vertex circle[triangles + 2];
     // + 2 => origin point and end/start connection
 
-    glm::vec3 starting_position(0.875, 0, 0);
+    glm::vec3 starting_position(0.275, 0, 0.25);
     circle[0].position = glm::vec3(0, 0, 0) + starting_position;
     float segment_angle = (2 * M_PI) / triangles;
     for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ ) {
@@ -274,12 +274,12 @@ int main(int argc, char** argv) {
 
 
     Vertex lines[6];
-    lines[0].position = glm::vec3(1, 0, 0);
-    lines[1].position = glm::vec3(-1, 0, 0);
-    lines[2].position = glm::vec3(0, 1, 0);
-    lines[3].position = glm::vec3(0, -1, 0);
-    lines[4].position = glm::vec3(0, 0, 1);
-    lines[5].position = glm::vec3(0, 0, -1);
+    lines[0].position = glm::vec3(2, 0, 0);
+    lines[1].position = glm::vec3(-2, 0, 0);
+    lines[2].position = glm::vec3(0, 2, 0);
+    lines[3].position = glm::vec3(0, -2, 0);
+    lines[4].position = glm::vec3(0, 0, 2);
+    lines[5].position = glm::vec3(0, 0, -2);
 
     lines[0].color = glm::u8vec4(255, 0, 0, 255);
     lines[1].color = glm::u8vec4(0, 0, 255, 255);
@@ -315,6 +315,12 @@ int main(int argc, char** argv) {
     glBindVertexArray(0);
 
 
+    glEnable(GL_DEPTH_TEST);
+
+    glClearColor(1, 1, 1, 1);
+    glClearDepth(-1);
+    glDepthFunc(GL_GREATER);
+
     double spf = 1.0 / 60;
     while( !glfwWindowShouldClose(window) ) {
         double frame_start = glfwGetTime();
@@ -332,14 +338,12 @@ int main(int argc, char** argv) {
             );
 
             for( size_t i = 0; i < sizeof(circle) / sizeof(Vertex); i++ )
-                circle[i].position = rotate_y * circle[i].position;
+                circle[i].position = (rotate_z) * circle[i].position;
 
             glNamedBufferSubData(circle_vbo, 0, sizeof(circle), circle);
         }
 
         {  // drawing
-            glClearColor(0.0, 0.0, 0.0, 1.0);
-            glClearDepth(1.0);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(program_id);
