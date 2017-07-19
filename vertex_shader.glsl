@@ -34,7 +34,13 @@ mat4 rotate_z(in float rad) {
 }
 
 void main() {
-    gl_Position = (rotate_z(radians(-15)) * rotate_x(radians(30)) * rotate_y(radians(-15))) * position;
+    gl_Position = 
+    (
+            rotate_z(radians(-15)) *
+            rotate_y(radians(30)) *
+            rotate_x(radians(-15))
+    ) *
+    position;
     v_color = color;
 }
 

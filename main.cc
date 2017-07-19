@@ -227,10 +227,8 @@ int main(int argc, char** argv) {
 
     size_t triangles = 128;
     Vertex circle[triangles + 2];
-    // + 2 => origin point and end/start connection
-
-    glm::vec3 starting_position(0.275, 0, 0.25);
-    circle[0].position = glm::vec3(0, 0, 0) + starting_position;
+    glm::vec3 circle_starting_position(0.275, 0, 0.325);
+    circle[0].position = glm::vec3(0, 0, 0) + circle_starting_position;
     float segment_angle = (2 * M_PI) / triangles;
     for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ ) {
         float angle = (i - 1) * segment_angle;
@@ -238,7 +236,7 @@ int main(int argc, char** argv) {
                 std::cos(angle),
                 std::sin(angle),
                 0
-        ) * 0.125f + starting_position;
+        ) * 0.125f + circle_starting_position;
     }
 
     circle[0].color = glm::u8vec4(255, 255, 255, 255);
@@ -315,11 +313,73 @@ int main(int argc, char** argv) {
     glBindVertexArray(0);
 
 
+    Vertex cube[8];
+    cube[0].position = glm::vec3(-1,  1,  1);
+    cube[1].position = glm::vec3(-1, -1,  1);
+    cube[2].position = glm::vec3( 1,  1,  1);
+    cube[3].position = glm::vec3( 1, -1,  1);
+    cube[4].position = glm::vec3( 1,  1, -1);
+    cube[5].position = glm::vec3( 1, -1, -1);
+    cube[6].position = glm::vec3(-1,  1, -1);
+    cube[7].position = glm::vec3(-1, -1, -1);
+
+    glm::vec3 cube_starting_position(-0.275, 0, 0);
+    for( size_t i = 0; i < sizeof(cube) / sizeof(Vertex); i++ )
+        cube[i].position = cube[i].position * 0.125f + cube_starting_position;
+
+    cube[0].color = glm::vec4(255,   0,   0, 255);
+    cube[1].color = glm::vec4(  0, 255,   0, 255);
+    cube[2].color = glm::vec4(  0,   0, 255, 255);
+    cube[3].color = glm::vec4(255, 255, 255, 255);
+    cube[4].color = glm::vec4(  0, 255,   0, 255);
+    cube[5].color = glm::vec4(255,   0,   0, 255);
+    cube[6].color = glm::vec4(255, 255, 255, 255);
+    cube[7].color = glm::vec4(  0,   0, 255, 255);
+
+    uint8_t cube_elements[17] = {
+        0, 1, 2, 3, 4, 5, 6, 7,
+        0xFF,
+        2, 4, 0, 6, 1, 7, 3, 5
+    };
+
+    GLuint cube_vao, cube_ebo, cube_vbo;
+    glCreateBuffers(1, &cube_vbo);
+    glNamedBufferStorage(cube_vbo, sizeof(cube), cube, GL_DYNAMIC_STORAGE_BIT);
+
+    glCreateBuffers(1, &cube_ebo);
+    glNamedBufferStorage(cube_ebo, sizeof(cube_elements), cube_elements, 0);
+
+    glCreateVertexArrays(1, &cube_vao);
+    glBindVertexArray(cube_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
+    glVertexAttribPointer(
+            position_location,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glVertexAttribPointer(
+            color_location,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
+    );
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_GREATER);
+
+    glEnable(GL_PRIMITIVE_RESTART);
+    glPrimitiveRestartIndex(0xFF);
+
 
     glClearColor(0, 0, 0, 1);
-    glClearDepth(-1);
+
 
     double spf = 1.0 / 60;
     while( !glfwWindowShouldClose(window) ) {
@@ -338,9 +398,15 @@ int main(int argc, char** argv) {
             );
 
             for( size_t i = 0; i < sizeof(circle) / sizeof(Vertex); i++ )
-                circle[i].position = (rotate_z) * circle[i].position;
+                circle[i].position = rotate_z * circle[i].position;
 
             glNamedBufferSubData(circle_vbo, 0, sizeof(circle), circle);
+
+
+            for( size_t i = 0; i < sizeof(cube) / sizeof(Vertex); i++ )
+                cube[i].position = rotate_y * cube[i].position;
+
+            glNamedBufferSubData(cube_vbo, 0, sizeof(cube), cube);
         }
 
         {  // drawing
@@ -358,6 +424,14 @@ int main(int argc, char** argv) {
             glEnableVertexAttribArray(position_location);
             glEnableVertexAttribArray(color_location);
             glDrawArrays(GL_LINES, 0, sizeof(lines) / sizeof(Vertex));
+            glBindVertexArray(0);
+
+            glBindVertexArray(cube_vao);
+            glEnableVertexAttribArray(position_location);
+            glEnableVertexAttribArray(color_location);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube_ebo);
+            glDrawElements(GL_TRIANGLE_STRIP, sizeof(cube_elements), GL_UNSIGNED_BYTE, NULL);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
             glBindVertexArray(0);
 
             glUseProgram(0);
