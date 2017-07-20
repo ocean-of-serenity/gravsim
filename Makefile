@@ -3,8 +3,9 @@ CC=g++
 SOURCES=main.cc
 TARGET=main
 
+all: $(TARGET)
 
-all: $(SOURCES)
+$(TARGET): $(SOURCES)
 	$(CC) $(SOURCES) -lglew32 -lglfw3 -lopengl32 -mwindows -o $(TARGET)
 
 .PHONY: clean
@@ -13,7 +14,7 @@ clean:
 
 re: clean all
 
-run: all
+run: $(TARGET)
 	./$(TARGET)
 
 rerun: re run

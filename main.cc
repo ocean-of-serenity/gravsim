@@ -2,7 +2,8 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -55,7 +56,8 @@ GLuint create_compiled_shader_from(
     const char* source = buffer.data();
     const int length = buffer.size();
     std::cout << "Source code:" << std::endl;
-    std::cout << source << std::endl;
+    std::cout.write(source, length);
+    std::cout << std::endl;
 
     glShaderSource(id, 1, &source, &length);
 
@@ -72,7 +74,8 @@ GLuint create_compiled_shader_from(
     glGetShaderInfoLog(id, info_log_length, &temp, info_log);
 
     std::cout << "Info log:" << std::endl;
-    std::cout << info_log << std::endl;
+    std::cout.write(info_log, info_log_length);
+    std::cout << std::endl;
     if( compile_status == GL_FALSE ) {
         std::cout << "Could not compile!" << std::endl;
         perror("Error");
@@ -223,52 +226,9 @@ int main(int argc, char** argv) {
 
     GLint position_location = glGetAttribLocation(program_id, "position");
     GLint color_location = glGetAttribLocation(program_id, "color");
-
-
-    size_t triangles = 128;
-    Vertex circle[triangles + 2];
-    glm::vec3 circle_starting_position(0.275, 0, 0.325);
-    circle[0].position = glm::vec3(0, 0, 0) + circle_starting_position;
-    float segment_angle = (2 * M_PI) / triangles;
-    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ ) {
-        float angle = (i - 1) * segment_angle;
-        circle[i].position = glm::vec3(
-                std::cos(angle),
-                std::sin(angle),
-                0
-        ) * 0.125f + circle_starting_position;
-    }
-
-    circle[0].color = glm::u8vec4(255, 255, 255, 255);
-    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ )
-        circle[i].color = glm::u8vec4(255, 255, 0, 255);
-
-    GLuint circle_vbo;
-    glCreateBuffers(1, &circle_vbo);
-    glNamedBufferStorage(circle_vbo, sizeof(circle), circle, GL_DYNAMIC_STORAGE_BIT);
-
-    GLuint circle_vao;
-    glCreateVertexArrays(1, &circle_vao);
-    glBindVertexArray(circle_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, circle_vbo);
-    glVertexAttribPointer(
-            position_location,
-            3,
-            GL_FLOAT,
-            GL_FALSE,
-            sizeof(Vertex),
-            (void*) offsetof(Vertex, position)
-    );
-    glVertexAttribPointer(
-            color_location,
-            4,
-            GL_UNSIGNED_BYTE,
-            GL_TRUE,
-            sizeof(Vertex),
-            (void*) offsetof(Vertex, color)
-    );
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    GLint projection_location = glGetUniformLocation(program_id, "projection");
+    GLint view_location = glGetUniformLocation(program_id, "view");
+    GLint model_location = glGetUniformLocation(program_id, "model");
 
 
     Vertex lines[6];
@@ -292,7 +252,9 @@ int main(int argc, char** argv) {
 
     glCreateVertexArrays(1, &lines_vao);
     glBindVertexArray(lines_vao);
+
     glBindBuffer(GL_ARRAY_BUFFER, lines_vbo);
+    glEnableVertexAttribArray(position_location);
     glVertexAttribPointer(
             position_location,
             3,
@@ -301,6 +263,7 @@ int main(int argc, char** argv) {
             sizeof(Vertex),
             (void*) offsetof(Vertex, position)
     );
+    glEnableVertexAttribArray(color_location);
     glVertexAttribPointer(
             color_location,
             4,
@@ -309,7 +272,54 @@ int main(int argc, char** argv) {
             sizeof(Vertex),
             (void*) offsetof(Vertex, color)
     );
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glBindVertexArray(0);
+
+
+    size_t triangles = 128;
+    Vertex circle[triangles + 2];
+    circle[0].position = glm::vec3(0, 0, 0);
+    float segment_angle = (2 * M_PI) / triangles;
+    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ ) {
+        float angle = (i - 1) * segment_angle;
+        circle[i].position = glm::vec3(
+                std::cos(angle),
+                std::sin(angle),
+                0
+        );
+    }
+
+    circle[0].color = glm::u8vec4(255, 255, 255, 255);
+    for( size_t i = 1; i < sizeof(circle) / sizeof(Vertex); i++ )
+        circle[i].color = glm::u8vec4(255, 255, 0, 255);
+
+    GLuint circle_vao, circle_vbo;
+    glCreateBuffers(1, &circle_vbo);
+    glNamedBufferStorage(circle_vbo, sizeof(circle), circle, 0);
+
+    glCreateVertexArrays(1, &circle_vao);
+    glBindVertexArray(circle_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, circle_vbo);
+    glEnableVertexAttribArray(position_location);
+    glVertexAttribPointer(
+            position_location,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glEnableVertexAttribArray(color_location);
+    glVertexAttribPointer(
+            color_location,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
+    );
+
     glBindVertexArray(0);
 
 
@@ -323,18 +333,14 @@ int main(int argc, char** argv) {
     cube[6].position = glm::vec3(-1,  1, -1);
     cube[7].position = glm::vec3(-1, -1, -1);
 
-    glm::vec3 cube_starting_position(-0.275, 0, 0);
-    for( size_t i = 0; i < sizeof(cube) / sizeof(Vertex); i++ )
-        cube[i].position = cube[i].position * 0.125f + cube_starting_position;
-
-    cube[0].color = glm::vec4(255,   0,   0, 255);
-    cube[1].color = glm::vec4(  0, 255,   0, 255);
-    cube[2].color = glm::vec4(  0,   0, 255, 255);
-    cube[3].color = glm::vec4(255, 255, 255, 255);
-    cube[4].color = glm::vec4(  0, 255,   0, 255);
-    cube[5].color = glm::vec4(255,   0,   0, 255);
-    cube[6].color = glm::vec4(255, 255, 255, 255);
-    cube[7].color = glm::vec4(  0,   0, 255, 255);
+    cube[0].color = glm::u8vec4(255,   0,   0, 255);
+    cube[1].color = glm::u8vec4(  0, 255,   0, 255);
+    cube[2].color = glm::u8vec4(  0,   0, 255, 255);
+    cube[3].color = glm::u8vec4(255, 255, 255, 255);
+    cube[4].color = glm::u8vec4(  0, 255,   0, 255);
+    cube[5].color = glm::u8vec4(255,   0,   0, 255);
+    cube[6].color = glm::u8vec4(255, 255, 255, 255);
+    cube[7].color = glm::u8vec4(  0,   0, 255, 255);
 
     uint8_t cube_elements[17] = {
         0, 1, 2, 3, 4, 5, 6, 7,
@@ -344,14 +350,18 @@ int main(int argc, char** argv) {
 
     GLuint cube_vao, cube_ebo, cube_vbo;
     glCreateBuffers(1, &cube_vbo);
-    glNamedBufferStorage(cube_vbo, sizeof(cube), cube, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(cube_vbo, sizeof(cube), cube, 0);
 
     glCreateBuffers(1, &cube_ebo);
     glNamedBufferStorage(cube_ebo, sizeof(cube_elements), cube_elements, 0);
 
     glCreateVertexArrays(1, &cube_vao);
     glBindVertexArray(cube_vao);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube_ebo);
+
     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
+    glEnableVertexAttribArray(position_location);
     glVertexAttribPointer(
             position_location,
             3,
@@ -360,6 +370,7 @@ int main(int argc, char** argv) {
             sizeof(Vertex),
             (void*) offsetof(Vertex, position)
     );
+    glEnableVertexAttribArray(color_location);
     glVertexAttribPointer(
             color_location,
             4,
@@ -368,15 +379,129 @@ int main(int argc, char** argv) {
             sizeof(Vertex),
             (void*) offsetof(Vertex, color)
     );
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
     glBindVertexArray(0);
+
+
+    Vertex octahedron[6];
+    octahedron[0].position = glm::vec3( 0,  1,  0);
+    octahedron[1].position = glm::vec3(-1,  0,  0);
+    octahedron[2].position = glm::vec3( 0,  0,  1);
+    octahedron[3].position = glm::vec3( 1,  0,  0);
+    octahedron[4].position = glm::vec3( 0,  0, -1);
+    octahedron[5].position = glm::vec3( 0, -1,  0);
+
+    octahedron[0].color = glm::u8vec4(255,   0,   0, 255);
+    octahedron[1].color = glm::u8vec4(  0, 255,   0, 255);
+    octahedron[2].color = glm::u8vec4(  0,   0, 255, 255);
+    octahedron[3].color = glm::u8vec4(255,   0, 255, 255);
+    octahedron[4].color = glm::u8vec4(255, 255,   0, 255);
+    octahedron[5].color = glm::u8vec4(  0, 255, 255, 255);
+
+    uint8_t octahedron_elements[13] = {
+        0, 1, 2, 3, 4, 1,
+        0xFF,
+        5, 1, 2, 3, 4, 1
+    };
+
+    GLuint octahedron_vao, octahedron_ebo, octahedron_vbo;
+    glCreateBuffers(1, &octahedron_vbo);
+    glNamedBufferStorage(octahedron_vbo, sizeof(octahedron), octahedron, 0);
+
+    glCreateBuffers(1, &octahedron_ebo);
+    glNamedBufferStorage(octahedron_ebo, sizeof(octahedron_elements), octahedron_elements, 0);
+
+    glCreateVertexArrays(1, &octahedron_vao);
+    glBindVertexArray(octahedron_vao);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, octahedron_ebo);
+
+    glBindBuffer(GL_ARRAY_BUFFER, octahedron_vbo);
+    glEnableVertexAttribArray(position_location);
+    glVertexAttribPointer(
+            position_location,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glEnableVertexAttribArray(color_location);
+    glVertexAttribPointer(
+            color_location,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
+    );
+
+    glBindVertexArray(0);
+
+
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 10.0f);
+
+    glm::mat4 view = glm::lookAt(
+            glm::vec3(1, 1, 2),
+            glm::vec3(0, 0, 0),
+            glm::vec3(0, 1, 0)
+    );
+    
+    glm::mat4 lines_model(1);
+
+    glm::mat4 circle_model = (
+        glm::translate(
+                glm::mat4(1),
+                glm::vec3(0.2, 0, 0.2)
+        ) *
+        glm::scale(
+                glm::mat4(1),
+                glm::vec3(0.125, 0.125, 0.125)
+        ) *
+        glm::rotate(
+                glm::mat4(1),
+                glm::radians(45.0f),
+                glm::vec3(0, 1, 0)
+        )
+    );
+
+    glm::mat4 cube_model = (
+            glm::translate(
+                glm::mat4(1),
+                glm::vec3(0.25, 0, 0)
+        ) *
+        glm::scale(
+                glm::mat4(1),
+                glm::vec3(0.125, 0.125, 0.125)
+        ) *
+        glm::rotate(
+                glm::mat4(1),
+                glm::radians(0.0f),
+                glm::vec3(1, 0, 0)
+        )
+    );
+
+    glm::mat4 octahedron_model = (
+        glm::translate(
+                glm::mat4(1),
+                glm::vec3(0.5, 0, -0.25)
+        ) *
+        glm::scale(
+                glm::mat4(1),
+                glm::vec3(0.125, 0.125, 0.125)
+        ) *
+        glm::rotate(
+                glm::mat4(1),
+                glm::radians(0.0f),
+                glm::vec3(1, 0, 0)
+        )
+    ); 
 
 
     glEnable(GL_DEPTH_TEST);
 
     glEnable(GL_PRIMITIVE_RESTART);
     glPrimitiveRestartIndex(0xFF);
-
 
     glClearColor(0, 0, 0, 1);
 
@@ -386,27 +511,22 @@ int main(int argc, char** argv) {
         double frame_start = glfwGetTime();
 
         {  // animating
-            glm::mat3 rotate_z(
-                     std::cos(spf), std::sin(spf), 0,
-                    -std::sin(spf), std::cos(spf), 0,
-                                 0,             0, 1
-            );
-            glm::mat3 rotate_y(
-                     std::cos(spf),              0, -std::sin(spf),
-                                 0,              1,              0,
-                     std::sin(spf),              0,  std::cos(spf)
-            );
+            circle_model = glm::rotate(
+                    glm::mat4(1),
+                    glm::radians((float) (360 * spf / 4)),
+                    glm::vec3(0, 0, 1)
+            ) * circle_model;
 
-            for( size_t i = 0; i < sizeof(circle) / sizeof(Vertex); i++ )
-                circle[i].position = rotate_z * circle[i].position;
-
-            glNamedBufferSubData(circle_vbo, 0, sizeof(circle), circle);
-
-
-            for( size_t i = 0; i < sizeof(cube) / sizeof(Vertex); i++ )
-                cube[i].position = rotate_y * cube[i].position;
-
-            glNamedBufferSubData(cube_vbo, 0, sizeof(cube), cube);
+            cube_model = glm::rotate(
+                    glm::mat4(1),
+                    glm::radians((float) (360 * spf / 4)),
+                    glm::vec3(0, 1, 0)
+            ) * cube_model;
+            octahedron_model = glm::rotate(
+                    glm::mat4(1),
+                    glm::radians((float) (360 * spf / 4)),
+                    glm::vec3(1, 0, 0)
+            ) * octahedron_model;
         }
 
         {  // drawing
@@ -414,24 +534,27 @@ int main(int argc, char** argv) {
 
             glUseProgram(program_id);
 
-            glBindVertexArray(circle_vao);
-            glEnableVertexAttribArray(position_location);
-            glEnableVertexAttribArray(color_location);
-            glDrawArrays(GL_TRIANGLE_FAN, 0, sizeof(circle) / sizeof(Vertex));
-            glBindVertexArray(0);
+            glUniformMatrix4fv(projection_location, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix4fv(view_location, 1, GL_FALSE, glm::value_ptr(view));
 
+            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(lines_model));
             glBindVertexArray(lines_vao);
-            glEnableVertexAttribArray(position_location);
-            glEnableVertexAttribArray(color_location);
             glDrawArrays(GL_LINES, 0, sizeof(lines) / sizeof(Vertex));
             glBindVertexArray(0);
 
+            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(circle_model));
+            glBindVertexArray(circle_vao);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, sizeof(circle) / sizeof(Vertex));
+            glBindVertexArray(0);
+
+            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(cube_model));
             glBindVertexArray(cube_vao);
-            glEnableVertexAttribArray(position_location);
-            glEnableVertexAttribArray(color_location);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cube_ebo);
             glDrawElements(GL_TRIANGLE_STRIP, sizeof(cube_elements), GL_UNSIGNED_BYTE, NULL);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+
+            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(octahedron_model));
+            glBindVertexArray(octahedron_vao);
+            glDrawElements(GL_TRIANGLE_FAN, sizeof(octahedron_elements), GL_UNSIGNED_BYTE, NULL);
             glBindVertexArray(0);
 
             glUseProgram(0);
