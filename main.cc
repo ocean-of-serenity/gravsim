@@ -18,7 +18,7 @@
 const std::vector<char> get_file_content(const std::string& file_name) {
     std::ifstream file(file_name, std::ios::binary);
     if( !file.good() ) {
-        std::cout << "Could not open file!" << std::endl;
+        std::cout << "#>> Could not open file!" << std::endl;
         perror("Error");
 
         std::exit(EXIT_FAILURE);
@@ -41,12 +41,12 @@ GLuint create_compiled_shader_from(
         GLenum shaderType,
         const std::string& file_name
     ) {
-    std::cout << ">>> Shader '" << file_name << "':" << std::endl;
+    std::cout << "##>>> Shader '" << file_name << "':" << std::endl;
 
     GLuint id = glCreateShader(shaderType);
 
     if( !id ) {
-        std::cout << "Could not create!" << std::endl;
+        std::cout << "#>> Could not create!" << std::endl;
         perror("Error");
 
         std::exit(EXIT_FAILURE);
@@ -55,7 +55,7 @@ GLuint create_compiled_shader_from(
     const std::vector<char> buffer = get_file_content(file_name);
     const char* source = buffer.data();
     const int length = buffer.size();
-    std::cout << "Source code:" << std::endl;
+    std::cout << "#>> Source code:" << std::endl;
     std::cout.write(source, length);
     std::cout << std::endl;
 
@@ -73,11 +73,11 @@ GLuint create_compiled_shader_from(
     GLsizei temp;
     glGetShaderInfoLog(id, info_log_length, &temp, info_log);
 
-    std::cout << "Info log:" << std::endl;
+    std::cout << "#>> Info log:" << std::endl;
     std::cout.write(info_log, info_log_length);
     std::cout << std::endl;
     if( compile_status == GL_FALSE ) {
-        std::cout << "Could not compile!" << std::endl;
+        std::cout << "#>> Could not compile!" << std::endl;
         perror("Error");
 
         std::exit(EXIT_FAILURE);
@@ -91,11 +91,11 @@ GLuint create_linked_program_with(
         GLuint vertex_shader_id,
         GLuint fragment_shader_id
     ) {
-    std::cout << ">>> Program:" << std::endl;
+    std::cout << "##>>> Program:" << std::endl;
     GLuint id = glCreateProgram();
     
     if( !id ) {
-        std::cout << "Could not create!" << std::endl;
+        std::cout << "#>> Could not create!" << std::endl;
         perror("Error");
 
         std::exit(EXIT_FAILURE);
@@ -122,11 +122,11 @@ GLuint create_linked_program_with(
     GLsizei temp;
     glGetProgramInfoLog(id, info_log_length, &temp, info_log);
 
-    std::cout << "Info log:" << std::endl;
+    std::cout << "#>> Info log:" << std::endl;
     std::cout << info_log << std::endl;
 
     if( validate_status == GL_FALSE or link_status == GL_FALSE ) {
-        std::cout << "Could not link!" << std::endl;
+        std::cout << "#>> Could not link!" << std::endl;
         perror("Error");
 
         glDeleteProgram(id);
@@ -171,12 +171,12 @@ int main(int argc, char** argv) {
     Deferer defer;
 
     glfwSetErrorCallback([](int error, const char* description) -> void {
-            std::cout << "GLFW Error: " << error << std::endl;
+            std::cout << "#>> GLFW Error: " << error << std::endl;
             std::cout << description << std::endl;
     });
 
     if( !glfwInit() ) {
-        std::cout << "Failed to initialize glfw" << std::endl;
+        std::cout << "##>>> Failed to initialize glfw" << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
@@ -187,9 +187,17 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
-    GLFWwindow* window = glfwCreateWindow(720, 720, "opengl_test", NULL, NULL);
+    uint32_t width = 1280;
+    uint32_t height = 720;
+    GLFWwindow* window = glfwCreateWindow(
+            width,
+            height,
+            "opengl_test",
+            NULL,
+            NULL
+    );
     if( !window ) {
-        std::cout << "Failed to create window" << std::endl;
+        std::cout << "##>>> Failed to create window" << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
@@ -198,11 +206,11 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
 
     if( glewInit() != GLEW_OK ) {
-        std::cout << "Failed to initialize glew" << std::endl;
+        std::cout << "##>>> Failed to initialize glew" << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
-    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "#>> OpenGL version: " << glGetString(GL_VERSION) << std::endl;
 
     glfwSwapInterval(1);
 
@@ -439,7 +447,17 @@ int main(int argc, char** argv) {
     glBindVertexArray(0);
 
 
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 10.0f);
+    glm::mat4 projection = glm::perspective(
+            glm::radians(45.0f), 
+            ((float) width) / height,
+            0.1f, 10.0f);
+    glProgramUniformMatrix4fv(
+            program_id,
+            projection_location,
+            1,
+            GL_FALSE,
+            glm::value_ptr(projection)
+    );
 
     glm::mat4 view = glm::lookAt(
             glm::vec3(1, 1, 2),
@@ -448,6 +466,14 @@ int main(int argc, char** argv) {
     );
     
     glm::mat4 lines_model(1);
+    glProgramUniformMatrix4fv(
+            program_id,
+            view_location,
+            1,
+            GL_FALSE,
+            glm::value_ptr(view)
+    );
+
 
     glm::mat4 circle_model = (
         glm::translate(
@@ -533,9 +559,6 @@ int main(int argc, char** argv) {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(program_id);
-
-            glUniformMatrix4fv(projection_location, 1, GL_FALSE, glm::value_ptr(projection));
-            glUniformMatrix4fv(view_location, 1, GL_FALSE, glm::value_ptr(view));
 
             glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(lines_model));
             glBindVertexArray(lines_vao);
