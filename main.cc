@@ -236,16 +236,18 @@ int main(int argc, char** argv) {
     GLint color_location = glGetAttribLocation(program_id, "color");
     GLint projection_location = glGetUniformLocation(program_id, "projection");
     GLint view_location = glGetUniformLocation(program_id, "view");
-    GLint model_location = glGetUniformLocation(program_id, "model");
+    GLint axis_location = glGetUniformLocation(program_id, "axis");
+    GLint is_line_location = glGetUniformLocation(program_id, "is_line");
+    GLint time_location = glGetUniformLocation(program_id, "time");
 
 
     Vertex lines[6];
-    lines[0].position = glm::vec3(2, 0, 0);
-    lines[1].position = glm::vec3(-2, 0, 0);
-    lines[2].position = glm::vec3(0, 2, 0);
-    lines[3].position = glm::vec3(0, -2, 0);
-    lines[4].position = glm::vec3(0, 0, 2);
-    lines[5].position = glm::vec3(0, 0, -2);
+    lines[0].position = glm::vec3(1, 0, 0);
+    lines[1].position = glm::vec3(-1, 0, 0);
+    lines[2].position = glm::vec3(0, 1, 0);
+    lines[3].position = glm::vec3(0, -1, 0);
+    lines[4].position = glm::vec3(0, 0, 1);
+    lines[5].position = glm::vec3(0, 0, -1);
 
     lines[0].color = glm::u8vec4(255, 0, 0, 255);
     lines[1].color = glm::u8vec4(0, 0, 255, 255);
@@ -460,12 +462,10 @@ int main(int argc, char** argv) {
     );
 
     glm::mat4 view = glm::lookAt(
-            glm::vec3(1, 1, 2),
+            glm::vec3(3, 3, 6),
             glm::vec3(0, 0, 0),
             glm::vec3(0, 1, 0)
     );
-    
-    glm::mat4 lines_model(1);
     glProgramUniformMatrix4fv(
             program_id,
             view_location,
@@ -473,55 +473,6 @@ int main(int argc, char** argv) {
             GL_FALSE,
             glm::value_ptr(view)
     );
-
-
-    glm::mat4 circle_model = (
-        glm::translate(
-                glm::mat4(1),
-                glm::vec3(0.2, 0, 0.2)
-        ) *
-        glm::scale(
-                glm::mat4(1),
-                glm::vec3(0.125, 0.125, 0.125)
-        ) *
-        glm::rotate(
-                glm::mat4(1),
-                glm::radians(45.0f),
-                glm::vec3(0, 1, 0)
-        )
-    );
-
-    glm::mat4 cube_model = (
-            glm::translate(
-                glm::mat4(1),
-                glm::vec3(0.25, 0, 0)
-        ) *
-        glm::scale(
-                glm::mat4(1),
-                glm::vec3(0.125, 0.125, 0.125)
-        ) *
-        glm::rotate(
-                glm::mat4(1),
-                glm::radians(0.0f),
-                glm::vec3(1, 0, 0)
-        )
-    );
-
-    glm::mat4 octahedron_model = (
-        glm::translate(
-                glm::mat4(1),
-                glm::vec3(0.5, 0, -0.25)
-        ) *
-        glm::scale(
-                glm::mat4(1),
-                glm::vec3(0.125, 0.125, 0.125)
-        ) *
-        glm::rotate(
-                glm::mat4(1),
-                glm::radians(0.0f),
-                glm::vec3(1, 0, 0)
-        )
-    ); 
 
 
     glEnable(GL_DEPTH_TEST);
@@ -533,51 +484,37 @@ int main(int argc, char** argv) {
 
 
     double spf = 1.0 / 60;
+    double elapsed = 0;
     while( !glfwWindowShouldClose(window) ) {
         double frame_start = glfwGetTime();
-
-        {  // animating
-            circle_model = glm::rotate(
-                    glm::mat4(1),
-                    glm::radians((float) (360 * spf / 4)),
-                    glm::vec3(0, 0, 1)
-            ) * circle_model;
-
-            cube_model = glm::rotate(
-                    glm::mat4(1),
-                    glm::radians((float) (360 * spf / 4)),
-                    glm::vec3(0, 1, 0)
-            ) * cube_model;
-            octahedron_model = glm::rotate(
-                    glm::mat4(1),
-                    glm::radians((float) (360 * spf / 4)),
-                    glm::vec3(1, 0, 0)
-            ) * octahedron_model;
-        }
 
         {  // drawing
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(program_id);
 
-            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(lines_model));
+            glUniform1f(time_location, (float) elapsed);
+
+            glUniform1ui(is_line_location, 1);
+            glUniform3fv(axis_location, 1, glm::value_ptr(glm::vec3(0, 1, 0)));
             glBindVertexArray(lines_vao);
             glDrawArrays(GL_LINES, 0, sizeof(lines) / sizeof(Vertex));
             glBindVertexArray(0);
 
-            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(circle_model));
+            glUniform1ui(is_line_location, 0);
+            glUniform3fv(axis_location, 1, glm::value_ptr(glm::vec3(0, 0, 1)));
             glBindVertexArray(circle_vao);
-            glDrawArrays(GL_TRIANGLE_FAN, 0, sizeof(circle) / sizeof(Vertex));
+            glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, sizeof(circle) / sizeof(Vertex), 3);
             glBindVertexArray(0);
 
-            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(cube_model));
+            glUniform3fv(axis_location, 1, glm::value_ptr(glm::vec3(0, 1, 0)));
             glBindVertexArray(cube_vao);
-            glDrawElements(GL_TRIANGLE_STRIP, sizeof(cube_elements), GL_UNSIGNED_BYTE, NULL);
+            glDrawElementsInstanced(GL_TRIANGLE_STRIP, sizeof(cube_elements), GL_UNSIGNED_BYTE, NULL, 3);
             glBindVertexArray(0);
 
-            glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(octahedron_model));
+            glUniform3fv(axis_location, 1, glm::value_ptr(glm::vec3(1, 0, 0)));
             glBindVertexArray(octahedron_vao);
-            glDrawElements(GL_TRIANGLE_FAN, sizeof(octahedron_elements), GL_UNSIGNED_BYTE, NULL);
+            glDrawElementsInstanced(GL_TRIANGLE_FAN, sizeof(octahedron_elements), GL_UNSIGNED_BYTE, NULL, 3);
             glBindVertexArray(0);
 
             glUseProgram(0);
@@ -594,6 +531,7 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(
                     std::chrono::milliseconds((size_t) (time_surplus * 1000))
             );
+        elapsed += spf;
     }
 
     return EXIT_SUCCESS;
