@@ -1,14 +1,9 @@
 
 #version 450
 
-#define PI 3.1415926535897932384626433832795
-#define PI_4 PI / 4
 
 uniform mat4 projection;
 uniform mat4 view;
-uniform vec3 axis;
-uniform bool is_line;
-uniform float time;
 
 in vec4 position;
 in vec4 color;
@@ -56,17 +51,7 @@ mat4 translate(in vec3 direction) {
 }
 
 void main() {
-    gl_Position =   projection *
-                    view *
-                    (is_line ? mat4(1) : rotate(time * PI_4, vec3(1) - axis)) *
-                    (is_line ? mat4(1) : translate(-3 * axis + gl_InstanceID * 2 * axis)) *
-                    (is_line ? scale(4) : scale(0.5)) *
-                    (is_line ? mat4(1) : rotate(
-                            time * PI_4,
-                            (gl_InstanceID % 3 == 0 ? vec3(0, 0, 1) :
-                                (gl_InstanceID % 3 == 1 ? vec3(0, 1, 0) : vec3(1, 0, 0)))
-                    )) *
-                    position;
+    gl_Position = projection * view * scale(6) * position;
     v_color = color;
 }
 
