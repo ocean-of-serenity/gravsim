@@ -12,6 +12,12 @@ in mat4 model;
 out vec4 v_color;
 
 
+mat4 translate(in vec3 direction) {
+    mat4 tm = mat4(1);
+    tm[3] = vec4(direction, 1);
+    return tm;
+}
+
 mat4 rotate(in float angle, in vec3 axis) {
     vec3 u = normalize(axis);
 
@@ -49,7 +55,7 @@ vec3 perp_plane(in vec3 direction) {
 
 void main() {
     vec3 axis = perp_plane(vec3(model[3]));
-    gl_Position = projection * view * rotate(time, axis) * model * position;
+    gl_Position = projection * view * rotate(time, vec3(0, 1, 0)) * translate(vec3(2, 0, 0)) * rotate(time, axis) * model * position;
     v_color = color;
 }
 
