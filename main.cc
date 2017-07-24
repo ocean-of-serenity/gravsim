@@ -679,7 +679,7 @@ int main(int argc, char** argv) {
     );
 
     glm::mat4 view = glm::lookAt(
-            glm::vec3(3, 4, 10),
+            glm::vec3(-3, 4, 10),
             glm::vec3(0, 0, 0),
             glm::vec3(0, 1, 0)
     );
