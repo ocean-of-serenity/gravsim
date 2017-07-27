@@ -164,6 +164,79 @@ typedef struct Vertex {
 } Vertex;
 
 
+unsigned int sums(unsigned int to) {
+    if( to == 0 )
+        return 0;
+    else
+        return to + sums(to - 1);
+}
+
+
+const std::vector<glm::vec3> sphere_from_oct(const size_t divisor) {
+    if( divisor == 0 )
+        return std::vector<glm::vec3>(0);
+
+    std::vector<glm::vec3> vertices(
+            2
+            + 4 * divisor
+            + (divisor > 1 ? 2 * 4 * sums(divisor - 1) : 0)
+    );
+    size_t index = 0;
+
+    vertices[index++] = glm::vec3(0, 1, 0);
+
+    for( size_t upper_lat = 1; upper_lat < divisor; upper_lat++ ) {
+        const glm::mat4 rot_z = glm::rotate(
+                glm::mat4(1),
+                glm::radians((-90.0f / divisor) * upper_lat),
+                glm::vec3(0, 0, 1)
+        );
+        const glm::vec3 lat_start = glm::mat3(rot_z) * glm::vec3(0, 1, 0);
+
+        for( size_t long_verts = 0; long_verts < 4 * upper_lat; long_verts++ ) {
+            const glm::mat4 rot_y = glm::rotate(
+                    glm::mat4(1),
+                    glm::radians((360.0f / (4 * upper_lat)) * long_verts),
+                    glm::vec3(0, 1, 0)
+            );
+            vertices[index++] = glm::mat3(rot_y) * lat_start;
+        }
+    }
+
+    glm::vec3 eq_start(1, 0, 0);
+    for( size_t long_verts = 0; long_verts < 4 * divisor; long_verts++ ) {
+        const glm::mat4 rot_y = glm::rotate(
+                glm::mat4(1),
+                glm::radians((360.0f / (4 * divisor)) * long_verts),
+                glm::vec3(0, 1, 0)
+        );
+        vertices[index++] = glm::mat3(rot_y) * eq_start;
+    }
+
+    for( size_t lower_lat = divisor - 1; lower_lat > 0; lower_lat-- ) {
+        const glm::mat4 rot_z = glm::rotate(
+                glm::mat4(1),
+                glm::radians((90.0f / divisor) * lower_lat),
+                glm::vec3(0, 0, 1)
+        );
+        const glm::vec3 lat_start = glm::mat3(rot_z) * glm::vec3(0, -1, 0);
+
+        for( size_t long_verts = 0; long_verts < 4 * lower_lat; long_verts++ ) {
+            const glm::mat4 rot_y = glm::rotate(
+                    glm::mat4(1),
+                    glm::radians((360.0f / (4 * lower_lat)) * long_verts),
+                    glm::vec3(0, 1, 0)
+            );
+            vertices[index++] = glm::mat3(rot_y) * lat_start;
+        }
+    }
+
+    vertices[index++] = glm::vec3(0, -1, 0);
+
+    return vertices;
+}
+
+
 int main(int argc, char** argv) {
     Deferer defer;
 
@@ -657,6 +730,94 @@ int main(int argc, char** argv) {
     glBindVertexArray(0);
 
 
+    GLuint sphere_vao, sphere_vbo, sphere_imbo;
+    glCreateVertexArrays(1, &sphere_vao);
+    glCreateBuffers(1, &sphere_vbo);
+    glCreateBuffers(1, &sphere_imbo);
+
+    const std::vector<glm::vec3> sphere_vertices = sphere_from_oct(4);
+    const size_t sphere_num_vertices = sphere_vertices.size();
+    {
+        glNamedBufferStorage(
+                sphere_vbo,
+                sizeof(Vertex) * sphere_num_vertices,
+                NULL,
+                GL_MAP_WRITE_BIT
+        );
+        Vertex* const sphere = (Vertex*) glMapNamedBuffer(
+                sphere_vbo,
+                GL_WRITE_ONLY
+        );
+        for( size_t i = 0; i < sphere_num_vertices; i++ ) {
+            sphere[i].position = sphere_vertices[i];
+            sphere[i].color = glm::u8vec4(255, 255, 0, 255);
+        }
+        glUnmapNamedBuffer(sphere_vbo);
+    }
+
+    const size_t sphere_num_instances = 3;
+    {
+        glNamedBufferStorage(
+                sphere_imbo,
+                sizeof(glm::mat4) * sphere_num_instances,
+                NULL,
+                GL_MAP_WRITE_BIT
+        );
+        glm::mat4* const models = (glm::mat4*) glMapNamedBuffer(
+                sphere_imbo,
+                GL_WRITE_ONLY
+        );
+        models[0] =
+            glm::translate(glm::mat4(1), glm::vec3(2, 2, 0)) *
+            glm::scale(glm::mat4(1), glm::vec3(0.5));
+        models[1] =
+            glm::translate(glm::mat4(1), glm::vec3(0, -2, 2)) *
+            glm::scale(glm::mat4(1), glm::vec3(0.5));
+        models[2] =
+            glm::translate(glm::mat4(1), glm::vec3(0, 0, -2)) *
+            glm::scale(glm::mat4(1), glm::vec3(0.5));
+        glUnmapNamedBuffer(sphere_imbo);
+    }
+
+    glBindVertexArray(sphere_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, sphere_vbo);
+    glEnableVertexAttribArray(mp_a_position);
+    glVertexAttribPointer(
+            mp_a_position,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, position)
+    );
+    glEnableVertexAttribArray(mp_a_color);
+    glVertexAttribPointer(
+            mp_a_color,
+            4,
+            GL_UNSIGNED_BYTE,
+            GL_TRUE,
+            sizeof(Vertex),
+            (void*) offsetof(Vertex, color)
+    );
+
+    glBindBuffer(GL_ARRAY_BUFFER, sphere_imbo);
+    for( size_t i = 0; i < 4; i++ ) {
+        glEnableVertexAttribArray(mp_a_model + i);
+        glVertexAttribPointer(
+                mp_a_model + i,
+                4,
+                GL_FLOAT,
+                GL_FALSE,
+                sizeof(glm::mat4),
+                (void*) ((sizeof(glm::mat4) / 4) * i)
+        );
+        glVertexAttribDivisor(mp_a_model + i, 1);
+    }
+
+    glBindVertexArray(0);
+
+
     glm::mat4 projection = glm::perspective(
             glm::radians(45.0f), 
             ((float) width) / height,
@@ -755,6 +916,15 @@ int main(int argc, char** argv) {
                     GL_UNSIGNED_BYTE,
                     NULL,
                     octahedron_num_instances
+            );
+            glBindVertexArray(0);
+
+            glBindVertexArray(sphere_vao);
+            glDrawArraysInstanced(
+                    GL_LINE_STRIP,
+                    0,
+                    sphere_num_vertices,
+                    sphere_num_instances
             );
             glBindVertexArray(0);
 
