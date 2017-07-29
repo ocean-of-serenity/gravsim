@@ -5,9 +5,9 @@ uniform mat4 projection;
 uniform mat4 view;
 uniform float time;
 
-in vec4 position;
-in vec4 color;
-in mat4 model;
+layout (location = 0) in vec4 position;
+layout (location = 1) in vec4 color;
+layout (location = 2) in mat4 model;
 
 out vec4 v_color;
 
@@ -55,7 +55,8 @@ vec3 perp_plane(in vec3 direction) {
 
 void main() {
     vec3 axis = perp_plane(vec3(model[3]));
-    gl_Position = projection * view * rotate(time, vec3(0, 1, 0)) * translate(vec3(2, 0, 0)) * rotate(time, axis) * model * position;
+    mat4 mrvp = projection * view * rotate(time, axis) * model;
+    gl_Position = mrvp * position;
     v_color = color;
 }
 

@@ -5,8 +5,9 @@
 uniform mat4 projection;
 uniform mat4 view;
 
-in vec4 position;
-in vec4 color;
+layout (location = 0) in vec4 position;
+layout (location = 1) in vec4 color;
+layout (location = 2) in mat4 model;
 
 out vec4 v_color;
 
@@ -51,7 +52,8 @@ mat4 translate(in vec3 direction) {
 }
 
 void main() {
-    gl_Position = projection * view * scale(6) * position;
+    mat4 mvp = projection * view * model;
+    gl_Position = mvp * position;
     v_color = color;
 }
 
