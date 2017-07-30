@@ -3,37 +3,16 @@
 #define OPENGL_TEST_BASE_H
 
 
+#include <vector>
+
 #include <glm/glm.hpp>
 
 
 const GLuint RESTART_INDEX = std::numeric_limits<GLuint>::max();
 
 
-GLuint create_vertex_array() {
-    GLuint vao;
-    glCreateVertexArrays(1, &vao);
-    return vao;
-}
-
-void delete_vertex_array(const GLuint vao) {
-    glDeleteVertexArrays(1, &vao);
-}
-
-
-GLuint create_buffer() {
-    GLuint bo;
-    glCreateBuffers(1, &bo);
-    return bo;
-}
-
-void delete_buffer(const GLuint bo) {
-    glDeleteBuffers(1, &bo);
-}
-
-
 struct BufferMapping {
     const GLuint bo;
-    const GLenum access;
     const void* const buffer;
 
     BufferMapping() = delete;
@@ -42,10 +21,9 @@ struct BufferMapping {
     BufferMapping& operator=(const BufferMapping&) = delete;
     BufferMapping& operator=(const BufferMapping&&) = delete;
     
-    BufferMapping(const GLuint bo, const GLenum access)
+    explicit BufferMapping(const GLuint bo)
         :   bo(bo),
-            access(access),
-            buffer(glMapNamedBuffer(bo, access))
+            buffer(glMapNamedBuffer(bo, GL_WRITE_ONLY))
     {}
 
     ~BufferMapping() {
@@ -61,53 +39,67 @@ struct Vertex {
 
 
 struct EBOPartition {
-    GLenum mode;
-    size_t offset;
-    size_t size;
-
-    EBOPartition() = default;
-
-    EBOPartition(
-            const GLenum mode,
-            const size_t offset,
-            const size_t size
-    )
-        :   mode(mode),
-            offset(offset),
-            size(size)
-    {}
+    const GLenum mode;
+    const size_t offset;
+    const size_t size;
 }; 
 
 
-struct EBOPartitionTable {
-    EBOPartition* const table;
+struct Buffer {
+    const GLuint bo;
+    const size_t stride;
     const size_t size;
 
-    EBOPartitionTable() = delete;
-    EBOPartitionTable(const EBOPartitionTable&) = delete;
-    EBOPartitionTable(const EBOPartitionTable&&) = delete;
-    EBOPartitionTable& operator=(const EBOPartitionTable&) = delete;
-    EBOPartitionTable& operator=(const EBOPartitionTable&&) = delete;
+    Buffer() = delete;
+    Buffer(const Buffer&) = delete;
+    Buffer(const Buffer&&) = delete;
+    Buffer& operator=(const Buffer&) = delete;
+    Buffer& operator=(const Buffer&&) = delete;
 
-    EBOPartitionTable(const size_t size)
-        :   table(new EBOPartition[size]),
+    explicit Buffer(
+            const size_t stride,
+            const size_t size
+    )
+        :   bo(Buffer::create()),
+            stride(stride),
             size(size)
-    {}
+    {
+        glNamedBufferStorage(
+                this->bo,
+                this-> stride * this->size,
+                NULL,
+                GL_MAP_WRITE_BIT
+        );
+    }
 
-    ~EBOPartitionTable() {
-        delete[] table;
+    ~Buffer() {
+        Buffer::discard(this->bo);
+    }
+
+
+    std::unique_ptr<BufferMapping> map() const {
+        return std::make_unique<BufferMapping>(this->bo);
+    }
+
+
+    static GLuint create() {
+        GLuint b_name;
+        glCreateBuffers(1, &b_name);
+        return b_name;
+    }
+
+    static void discard(const GLuint b_name) {
+        glDeleteBuffers(1, &b_name);
     }
 };
 
 
 struct VertexArray {
     const GLuint vao;
-    const GLuint vbo;
-    const GLuint ebo;
-    const GLuint imbo;
-    const size_t vbo_size;
-    const size_t ebo_size;
-    const size_t imbo_size;
+    const Buffer vb;
+    const Buffer eb;
+    const Buffer imb;
+    const std::vector<EBOPartition> p_table;
 
     VertexArray() = delete;
     VertexArray(const VertexArray&) = delete;
@@ -115,102 +107,101 @@ struct VertexArray {
     VertexArray& operator=(const VertexArray&) = delete;
     VertexArray& operator=(const VertexArray&&) = delete;
 
-    VertexArray(
-            const size_t vbo_size,
-            const size_t ebo_size,
-            const size_t imbo_size
+    explicit VertexArray(
+            const size_t vb_size,
+            const size_t eb_size,
+            const size_t imb_size,
+            const std::vector<EBOPartition>& p_table
     )
-        :   vao(create_vertex_array()),
-            vbo(create_buffer()),
-            ebo(create_buffer()),
-            imbo(create_buffer()),
-            vbo_size(vbo_size),
-            ebo_size(ebo_size),
-            imbo_size(imbo_size)
+        :   vao(VertexArray::create()),
+            vb(sizeof(Vertex), vb_size),
+            eb(sizeof(GLuint), eb_size),
+            imb(sizeof(glm::mat4), imb_size),
+            p_table(p_table)
     {
-        glNamedBufferStorage(
-                this->vbo,
-                sizeof(Vertex) * this->vbo_size,
-                NULL,
-                GL_MAP_WRITE_BIT
+        glVertexArrayVertexBuffer(
+                this->vao,
+                0,
+                this->vb.bo,
+                0,
+                sizeof(Vertex)
         );
-        glNamedBufferStorage(
-                this->ebo,
-                sizeof(GLuint) * this->ebo_size,
-                NULL,
-                GL_MAP_WRITE_BIT
-        );
-        glNamedBufferStorage(
-                this->imbo,
-                sizeof(glm::mat4) * this->imbo_size,
-                NULL,
-                GL_MAP_WRITE_BIT
-        );
-
-        glBindVertexArray(this->vao);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->ebo);
-        glBindBuffer(GL_ARRAY_BUFFER, this->vbo);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(
+        glEnableVertexArrayAttrib(this->vao, 0);
+        glVertexArrayAttribBinding(this->vao, 0, 0);
+        glVertexArrayAttribFormat(
+                this->vao,
                 0,
                 3,
                 GL_FLOAT,
                 GL_FALSE,
-                sizeof(Vertex),
-                (void*) offsetof(Vertex, position)
+                offsetof(Vertex, position)
         );
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(
+        glEnableVertexArrayAttrib(this->vao, 1);
+        glVertexArrayAttribBinding(this->vao, 1, 0);
+        glVertexArrayAttribFormat(
+                this->vao,
                 1,
                 4,
                 GL_UNSIGNED_BYTE,
                 GL_TRUE,
-                sizeof(Vertex),
-                (void*) offsetof(Vertex, color)
+                offsetof(Vertex, color)
         );
 
-        glBindBuffer(GL_ARRAY_BUFFER, this->imbo);
+        glVertexArrayElementBuffer(this->vao, this->eb.bo);
+
+        glVertexArrayVertexBuffer(
+                this->vao,
+                1,
+                this->imb.bo,
+                0,
+                sizeof(glm::mat4)
+        );
+        glVertexArrayBindingDivisor(this->vao, 1, 1);
         for( size_t i = 0; i < 4; i++ ) {
-            glEnableVertexAttribArray(2 + i);
-            glVertexAttribPointer(
+            glEnableVertexArrayAttrib(this->vao, 2 + i);
+            glVertexArrayAttribBinding(this->vao, 2 + i, 1);
+            glVertexArrayAttribFormat(
+                    this->vao,
                     2 + i,
                     4,
                     GL_FLOAT,
                     GL_FALSE,
-                    sizeof(glm::mat4),
-                    (void*) ((sizeof(glm::mat4) / 4) * i)
+                    (sizeof(glm::mat4) / 4) * i
             );
-            glVertexAttribDivisor(2 + i, 1);
         }
-
-        glBindVertexArray(0); 
     }
 
     ~VertexArray() {
-        delete_buffer(this->imbo);
-        delete_buffer(this->ebo);
-        delete_buffer(this->vbo);
-        delete_vertex_array(this->vao);
+        VertexArray::discard(this->vao);
     }
+
+
+    void draw() {
+        glBindVertexArray(this->vao);
+        for( size_t i = 0; i < this->p_table.size(); i++ ) {
+            glDrawElementsInstanced(
+                    this->p_table[i].mode,
+                    this->p_table[i].size,
+                    GL_UNSIGNED_INT,
+                    (void*) (this->p_table[i].offset * sizeof(GLuint)),
+                    this->imb.size
+            );
+        }
+        glBindVertexArray(0);
+    }
+
+
+    static GLuint create() {
+        GLuint va_name;
+        glCreateVertexArrays(1, &va_name);
+        return va_name;
+    }
+
+    void discard(const GLuint va_name) {
+        glDeleteVertexArrays(1, &va_name);
+    }
+
 };
-
-
-void draw_elements(
-        const VertexArray* const va,
-        const EBOPartitionTable* const ebopt
-) {
-    glBindVertexArray(va->vao);
-    for( size_t i = 0; i < ebopt->size; i++ ) {
-        glDrawElementsInstanced(
-                ebopt->table[i].mode,
-                ebopt->table[i].size,
-                GL_UNSIGNED_INT,
-                (void*) ebopt->table[i].offset,
-                va->imbo_size
-        );
-    }
-    glBindVertexArray(0);
-}
 
 
 #endif //OPENGL_TEST_BASE_H

@@ -3,6 +3,8 @@
 #define OPENGL_TEST_SPHERE_H
 
 
+#include <vector>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -14,7 +16,7 @@ size_t sphere_vertexbuffer_size(const size_t divisor) {
         return 0;
     }
     else {
-        return 2 + 4 * (divisor + (divisor - 1) * divisor);
+        return 2 + 4 * (divisor + divisor * divisor);
     }
 }
 
@@ -62,31 +64,11 @@ void sphere_vertex_positions(Vertex* const vertices, const size_t divisor) {
             vertices[index++].position = glm::mat3(rot_y) * eq_start;
         }
 
-        const float bottom_angle_segment = 90.0f / divisor;
-        for( size_t lower_lat = divisor - 1; lower_lat > 0; lower_lat-- ) {
-            const glm::mat4 rot_z = glm::rotate(
-                    glm::mat4(1),
-                    glm::radians(bottom_angle_segment * lower_lat),
-                    glm::vec3(0, 0, 1)
-            );
-            const glm::vec3 lat_start = glm::mat3(rot_z) * glm::vec3(0, -1, 0);
-
-            const float circ_angle_segment = 360.0f / (4 * lower_lat);
-            for(
-                    size_t long_verts = 0;
-                    long_verts < 4 * lower_lat;
-                    long_verts++
-            ) {
-                const glm::mat4 rot_y = glm::rotate(
-                        glm::mat4(1),
-                        glm::radians(circ_angle_segment * long_verts),
-                        glm::vec3(0, 1, 0)
-                );
-                vertices[index++].position = glm::mat3(rot_y) * lat_start;
-            }
+        const size_t upper_lat_end = index;
+        for( size_t i = 0; i < upper_lat_end; i++ ) {
+            const glm::vec3 temp = vertices[i].position;
+            vertices[index++].position = glm::vec3(temp.x, -temp.y, temp.z);
         }
-
-        vertices[index++].position = glm::vec3(0, -1, 0);
 
         return;
     }
@@ -111,101 +93,111 @@ void sphere_elements(GLuint* const elements, const size_t divisor) {
         return;
     }
     else {
-        const size_t n_elements = sphere_vertexbuffer_size(divisor);
+        const size_t n_vertices = sphere_vertexbuffer_size(divisor);
+        const size_t second_half = n_vertices / 2;
+        const size_t n_elements = sphere_elementbuffer_size(divisor);
 
         size_t index = 0;
         
         elements[index++] = 0;
-        for( GLuint e = 1; e < 5; e++ ) {
+        for( GLuint e = 1; e <= 4; e++ ) {
             elements[index++] = e;
         }
         elements[index++] = 1;
 
         elements[index++] = RESTART_INDEX;
 
-        elements[index++] = (n_elements - 1) - 0;
-        for( GLuint e = 1; e < 5; e++ ) {
-            elements[index++] = (n_elements - 1) - e;
+        elements[index++] = second_half + 0;
+        for( GLuint e = 1; e <= 4; e++ ) {
+            elements[index++] = second_half + e;
         }
-        elements[index++] = (n_elements - 1) - 1;
+        elements[index++] = second_half + 1;
 
-        for(
-                GLuint
-                    r = 1,
-                    top_base = 1 + (r - 1) * 4,
-                    bot_base = 1 + r * 4
-                ;
-                r < divisor;
-                top_base += r * 4, bot_base += (r + 1) * 4, r++
-        ) {
-            const GLuint top_step = r;
-            const GLuint bot_step = r + 1;
+        {
+            GLuint top_base = 1;
+            GLuint bot_base = 1;
+            for( GLuint row = 1; row < divisor; row++ ) {
+                const GLuint top_step = row;
+                const GLuint bot_step = row + 1;
 
-            for( GLuint f = 0; f < 4; f++ ) {
-                const GLuint top_f_base = top_base + f * top_step;
-                const GLuint bot_f_base = bot_base + f * bot_step;
+                top_base += (row - 1) * 4;
+                bot_base += row * 4;
 
-                GLuint e = 0;
-                for( ; e <= divisor; e++ ) {
-                    elements[index++] = bot_f_base + e;
-                    elements[index++] = top_f_base + e;
+                for( GLuint face = 0; face < 4; face++ ) {
+                    const GLuint face_top_base = top_base + face * top_step;
+                    const GLuint face_bot_base = bot_base + face * bot_step;
+
+                    const GLuint n_face_squares = face > 2 ? row - 1 : row;
+
+                    elements[index++] = face_bot_base;
+                    for( GLuint el = 0; el <= n_face_squares; el++ ) {
+                        elements[index++] = face_top_base + el;
+                        elements[index++] = face_bot_base + el + 1;
+                    }
+
+                    if( face > 2 ) {
+                        elements[index++] = top_base;
+                        elements[index++] = bot_base;
+                    }
+
+                    elements[index++] = RESTART_INDEX;
                 }
-                elements[index++] = bot_f_base + e;
-                elements[index++] = RESTART_INDEX;
             }
         }
 
-        for(
-                GLuint
-                    r = 1,
-                    bot_base = (n_elements - 1) - 1 - (r - 1) * 4,
-                    top_base = (n_elements - 1) - 1 - r * 4
-                ;
-                r < divisor;
-                bot_base -= r * 4, top_base -= (r + 1) * 4, r++
-        ) {
-            const GLuint bot_step = r;
-            const GLuint top_step = r + 1;
+        {
+            GLuint top_base = second_half + 1;
+            GLuint bot_base = second_half + 1;
+            for( GLuint row = 1; row < divisor; row++ ) {
+                const GLuint top_step = row;
+                const GLuint bot_step = row + 1;
 
-            for( GLuint f = 0; f < 4; f++ ) {
-                const GLuint bot_f_base = bot_base - f * bot_step;
-                const GLuint top_f_base = top_base - f * top_step;
+                top_base += (row - 1) * 4;
+                bot_base += row * 4;
 
-                GLuint e = 0;
-                for( ; e <= divisor; e++ ) {
-                    elements[index++] = top_f_base - e;
-                    elements[index++] = bot_f_base - e;
+                for( GLuint face = 0; face < 4; face++ ) {
+                    const GLuint face_top_base = top_base + face * top_step;
+                    const GLuint face_bot_base = bot_base + face * bot_step;
+
+                    const GLuint n_face_squares = face > 2 ? row - 1 : row;
+
+                    elements[index++] = face_bot_base;
+                    for( GLuint el = 0; el <= n_face_squares; el++ ) {
+                        elements[index++] = face_top_base + el;
+                        elements[index++] = face_bot_base + el + 1;
+                    }
+
+                    if( face > 2 ) {
+                        elements[index++] = top_base;
+                        elements[index++] = bot_base;
+                    }
+
+                    elements[index++] = RESTART_INDEX;
                 }
-                elements[index++] = top_f_base - e;
-                elements[index++] = RESTART_INDEX;
             }
+        }
+
+        for( ; index < n_elements; index++ ) {
+            elements[index] = RESTART_INDEX;
         }
     }
 }
 
 
-size_t sphere_elementbuffer_partitions_size(const size_t divisor) {
-    return (divisor > 1) ? 2 : divisor;
-}
-
-void sphere_elementbuffer_partitions(
-        EBOPartitionTable* const ebopt,
-        const VertexArray* const va,
+const std::vector<EBOPartition> sphere_elementbuffer_partitions(
         const size_t divisor
 ) {
-    if( ebopt->size == 0 or divisor == 0 ) {
-        return;
+    if( divisor == 0 ) {
+        return {};
+    }
+    else if( divisor == 1 ) {
+        return {{GL_TRIANGLE_FAN, 0, 13}};
     }
     else {
-        ebopt->table[0] = EBOPartition(GL_TRIANGLE_FAN, 0, 13);
-
-        if( ebopt->size > 1 and divisor > 1 ) {
-            ebopt->table[1] = EBOPartition(
-                    GL_TRIANGLE_STRIP,
-                    14,
-                    va->ebo_size - 14
-            );
-        }
+        return {
+            {GL_TRIANGLE_FAN, 0, 13},
+            {GL_TRIANGLE_STRIP, 13, sphere_elementbuffer_size(divisor) - 13}
+        };
     }
 }
 

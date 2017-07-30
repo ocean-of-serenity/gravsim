@@ -55,7 +55,7 @@ vec3 perp_plane(in vec3 direction) {
 
 void main() {
     vec3 axis = perp_plane(vec3(model[3]));
-    mat4 mrvp = projection * view * rotate(time, axis) * model;
+    mat4 mrvp = projection * view * rotate(time / 2, axis) * model;
     gl_Position = mrvp * position;
     v_color = color;
 }

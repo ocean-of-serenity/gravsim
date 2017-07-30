@@ -254,11 +254,16 @@ int main(const int argc, const char** const argv) {
         glDeleteShader(fs_id);
     }
 
-    
-    VertexArray soc(6, 6, 1);
+
+    VertexArray soc(
+            6,
+            6,
+            1,
+            {{GL_LINES, 0, 6}}
+    );
     {
-        BufferMapping mapping(soc.vbo, GL_WRITE_ONLY);
-        Vertex* const vertices = (Vertex*) mapping.buffer;
+        auto mapping = soc.vb.map();
+        Vertex* const vertices = (Vertex*) mapping->buffer;
         vertices[0].position = glm::vec3(1, 0, 0);
         vertices[1].position = glm::vec3(-1, 0, 0);
         vertices[2].position = glm::vec3(0, 1, 0);
@@ -275,53 +280,48 @@ int main(const int argc, const char** const argv) {
     }
 
     {
-        BufferMapping mapping(soc.ebo, GL_WRITE_ONLY);
-        GLuint* const elements = (GLuint*) mapping.buffer;
-        for( GLuint i = 0; i < soc.ebo_size; i++ ) {
+        auto mapping = soc.eb.map();
+        GLuint* const elements = (GLuint*) mapping->buffer;
+        for( GLuint i = 0; i < soc.eb.size; i++ ) {
             elements[i] = i;
         }
     }
 
     {
-        BufferMapping mapping(soc.imbo, GL_WRITE_ONLY);
-        glm::mat4* const models = (glm::mat4*) mapping.buffer;
+        auto mapping = soc.imb.map();
+        glm::mat4* const models = (glm::mat4*) mapping->buffer;
         models[0] = glm::scale(glm::mat4(1), glm::vec3(6));
     }
 
-    EBOPartitionTable soc_ebopt(1);
-    soc_ebopt.table[0] = EBOPartition(GL_LINES, 0, 6);
-
 
     VertexArray sphere(
-            sphere_vertexbuffer_size(2),
-            sphere_elementbuffer_size(2),
-            1
+            sphere_vertexbuffer_size(6),
+            sphere_elementbuffer_size(6),
+            1,
+            sphere_elementbuffer_partitions(6)
     );
     {
-        BufferMapping mapping(sphere.vbo, GL_WRITE_ONLY);
-        Vertex* const vertices = (Vertex*) mapping.buffer;
-        sphere_vertex_positions(vertices, 2);
-        for( size_t i = 0; i < sphere.vbo_size; i++ ) {
+        auto mapping = sphere.vb.map();
+        Vertex* const vertices = (Vertex*) mapping->buffer;
+        sphere_vertex_positions(vertices, 6);
+        for( size_t i = 0; i < sphere.vb.size; i++ ) {
             vertices[i].color = glm::u8vec4(255, 255, 0, 255);
         }
     }
 
     {
-        BufferMapping mapping(sphere.ebo, GL_WRITE_ONLY);
-        GLuint* const elements = (GLuint*) mapping.buffer;
-        sphere_elements(elements, 2);
+        auto mapping = sphere.eb.map();
+        GLuint* const elements = (GLuint*) mapping->buffer;
+        sphere_elements(elements, 6);
     }
 
     {
-        BufferMapping mapping(sphere.imbo, GL_WRITE_ONLY);
-        glm::mat4* const models = (glm::mat4*) mapping.buffer;
+        auto mapping = sphere.imb.map();
+        glm::mat4* const models = (glm::mat4*) mapping->buffer;
         models[0] = glm::translate(glm::mat4(1), glm::vec3(2, 2, 0));
 //        models[1] = glm::translate(glm::mat4(1), glm::vec3(0, -2, 2));
 //        models[2] = glm::translate(glm::mat4(1), glm::vec3(0, 0, -2));
     }
-
-    EBOPartitionTable sphere_ebopt(sphere_elementbuffer_partitions_size(2));
-    sphere_elementbuffer_partitions(&sphere_ebopt, &sphere, 2);
 
 
     GLint sp_u_projection = glGetUniformLocation(sp_id, "projection");
@@ -393,13 +393,13 @@ int main(const int argc, const char** const argv) {
 
             glUseProgram(sp_id);
 
-            draw_elements(&soc, &soc_ebopt);
+            soc.draw();
 
             glUseProgram(mp_id);
 
             glUniform1f(mp_u_time, (float) elapsed);
 
-            draw_elements(&sphere, &sphere_ebopt);
+            sphere.draw();
 
             glUseProgram(0);
 
