@@ -15,8 +15,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "base.h"
-#include "sphere.h"
+#include "base.hh"
+#include "sphere.hh"
 
 
 const std::vector<char> get_file_content(const std::string& file_name) {
@@ -156,11 +156,7 @@ public:
 
     ~Deferer() {
         if( !this->done ) {
-            while( !this->callbacks.empty() ) {
-                std::function<void()> callback = this->callbacks.back();
-                this->callbacks.pop_back();
-                callback();
-            }
+            this->unfold();
         }
     }
 

@@ -3,8 +3,10 @@ CC=g++
 SOURCES=main.cc
 TARGET=main
 
+SHADERS=static_vertex_shader.glsl moving_vertex_shader.glsl fragment_shader.glsl
+
 $(TARGET): $(SOURCES)
-	$(CC) $(SOURCES) -lglew32 -lglfw3 -lopengl32 -mwindows -o $(TARGET)
+	$(CC) $(SOURCES) -DGLEW_STATIC -lglew32 -lopengl32 -mwindows -o $(TARGET) -static -lglfw3 -lgcc -lstdc++
 
 all: $(TARGET)
 
@@ -18,4 +20,7 @@ clean:
 re: clean all
 
 rerun: re run
+
+pkg: $(TARGET) $(SHADERS)
+	zip `basename ${PWD}` $(TARGET) $(SHADERS)
 

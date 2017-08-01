@@ -8,7 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "base.h"
+#include "base.hh"
 
 
 size_t sphere_vertexbuffer_size(const size_t divisor) {
