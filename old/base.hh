@@ -103,9 +103,9 @@ struct VertexArray {
 
     VertexArray() = delete;
     VertexArray(const VertexArray&) = delete;
-    VertexArray(const VertexArray&&) = delete;
+    VertexArray(VertexArray&&) = delete;
     VertexArray& operator=(const VertexArray&) = delete;
-    VertexArray& operator=(const VertexArray&&) = delete;
+    VertexArray& operator=(VertexArray&&) = delete;
 
     explicit VertexArray(
             const size_t vb_size,

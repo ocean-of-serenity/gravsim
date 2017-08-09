@@ -141,7 +141,6 @@ GLuint create_linked_program_with(
 class Deferer {
 private:
     std::deque<std::function<void()>> callbacks;
-    bool done;
 
 public:
     Deferer(const Deferer&) = delete;
@@ -149,31 +148,18 @@ public:
     Deferer& operator=(const Deferer&) = delete;
     Deferer& operator=(const Deferer&&) = delete;
 
-    explicit Deferer()
-        :   callbacks(),
-            done(false)
-    {}
+    explicit Deferer() : callbacks() {}
 
     ~Deferer() {
-        if( !this->done ) {
-            this->unfold();
+        while( !this->callbacks.empty() ) {
+            std::function<void()> callback = this->callbacks.back();
+            this->callbacks.pop_back();
+            callback();
         }
     }
 
     void operator()(std::function<void()> callback) {
         this->callbacks.push_back(callback);
-    }
-
-    void unfold() {
-        if( !this->done ) {
-            while( !this->callbacks.empty() ) {
-                std::function<void()> callback = this->callbacks.back();
-                this->callbacks.pop_back();
-                callback();
-            }
-
-            this->done = true;
-        }
     }
 };
 
@@ -249,7 +235,6 @@ int main(const int argc, const char** const argv) {
         glDeleteShader(mvs_id);
         glDeleteShader(fs_id);
     }
-
 
     VertexArray soc(
             6,
@@ -369,7 +354,7 @@ int main(const int argc, const char** const argv) {
     );
 
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+//    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -414,8 +399,6 @@ int main(const int argc, const char** const argv) {
         }
         elapsed += spf;
     }
-
-    defer.unfold();
 
     return EXIT_SUCCESS;
 }

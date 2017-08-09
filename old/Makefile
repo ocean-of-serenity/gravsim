@@ -1,12 +1,14 @@
 
-CC=g++
+CC=clang++
 SOURCES=main.cc
-TARGET=main
+TARGET=main.exe
 
 SHADERS=static_vertex_shader.glsl moving_vertex_shader.glsl fragment_shader.glsl
 
 $(TARGET): $(SOURCES)
-	$(CC) $(SOURCES) -DGLEW_STATIC -lglew32 -lopengl32 -mwindows -o $(TARGET) -static -lglfw3 -lgcc -lstdc++
+	$(CC) $(SOURCES) -o $(TARGET) -std=c++14 -fno-exceptions -Wall -Werror \
+		-mwindows -DGLEW_STATIC -lglew32 -lopengl32 \
+		-static -lglfw3 -lgcc -lstdc++
 
 all: $(TARGET)
 
