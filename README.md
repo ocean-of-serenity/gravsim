@@ -1,4 +1,10 @@
-# opengl_test
-A little test of opengl, using glew and glfw in a msys2 environment on win7 (64 bit).
--- Added packaged executable for windows
+OpenGL Test
+===========
+
+Playing around with OpenGL on Win7(64) within a msys2 using go and go-gl
+(openGL 4.5 with GLOW and GLFW).
+
+Zip package contains executable compiled on Win7(64) and all nessecary files.
+
+![Screenshot](capture.png)
 
