@@ -1,4 +1,6 @@
+
 package main
+
 
 import (
     "fmt"
@@ -14,9 +16,11 @@ import (
     "github.com/go-gl/mathgl/mgl32"
 )
 
+
 type Color struct {
     r, g, b, a uint8
 }
+
 
 func main() {
     if err := glfw.Init(); err != nil {
@@ -54,6 +58,7 @@ func main() {
     log.Println("OpenGL version:", gl.GoStr(gl.GetString(gl.VERSION)))
 
     glfw.SwapInterval(1)
+
 
     var generalProgram uint32
     {
@@ -111,6 +116,7 @@ func main() {
         gl.DeleteShader(vs)
     }
 
+
     projection := mgl32.Perspective(
         math.Pi/4,
         float32(windowWidth)/float32(windowHeight),
@@ -125,6 +131,7 @@ func main() {
     )
 
     viewProjection := projection.Mul4(view)
+
 
     var socVao uint32
     gl.CreateVertexArrays(1, &socVao)
