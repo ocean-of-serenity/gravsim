@@ -300,7 +300,7 @@ func main() {
     }
 
 
-    gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
+//    gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 
     gl.Enable(gl.DEPTH_TEST)
 
