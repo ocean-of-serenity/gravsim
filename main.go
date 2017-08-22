@@ -13,12 +13,24 @@ import (
 
     "github.com/go-gl/gl/v4.5-core/gl"
     "github.com/go-gl/glfw/v3.2/glfw"
-    "github.com/go-gl/mathgl/mgl32"
+    mgl "github.com/go-gl/mathgl/mgl32"
 )
 
 
 type Color struct {
-    r, g, b, a uint8
+    r, g, b uint8
+}
+
+type Light struct {
+    pos, color mgl.Vec4
+}
+
+type Material struct {
+    ambientStrength, diffuseStrength, specularStrength float32
+}
+
+type Camera struct {
+    root, watch mgl.Vec4
 }
 
 
@@ -117,20 +129,62 @@ func main() {
     }
 
 
-    projection := mgl32.Perspective(
-        math.Pi/4,
-        float32(windowWidth)/float32(windowHeight),
+    projection := mgl.Perspective(
+        math.Pi / 4,
+        float32(windowWidth) / float32(windowHeight),
         4,
         20,
     )
 
-    view := mgl32.LookAtV(
-        mgl32.Vec3{3, 4, 10},
-        mgl32.Vec3{0, 0, 0},
-        mgl32.Vec3{0, 1, 0},
+    view := mgl.LookAtV(
+        mgl.Vec3{3, 4, 10},
+        mgl.Vec3{0, 0, 0},
+        mgl.Vec3{0, 1, 0},
     )
 
     viewProjection := projection.Mul4(view)
+
+    uLocVP := gl.GetUniformLocation(tessProgram, gl.Str("view_projection\x00"))
+    gl.ProgramUniformMatrix4fv(tessProgram, uLocVP, 1, false, &viewProjection[0])
+    uLocVP = gl.GetUniformLocation(generalProgram, gl.Str("view_projection\x00"))
+    gl.ProgramUniformMatrix4fv(generalProgram, uLocVP, 1, false, &viewProjection[0])
+
+
+    var lightUbo uint32
+    gl.CreateBuffers(1, &lightUbo)
+    gl.NamedBufferStorage(lightUbo, 8 * 4, nil, gl.MAP_WRITE_BIT)
+    {
+        ptr := gl.MapNamedBuffer(lightUbo, gl.WRITE_ONLY)
+        light := (*[1]Light)(ptr)[:]
+        light[0] = Light{mgl.Vec4{0, 0, 0, 1}, mgl.Vec4{1, 1, 1, 1}}
+        gl.UnmapNamedBuffer(lightUbo)
+    }
+    gl.UniformBlockBinding(tessProgram, 1, 1)
+    gl.BindBufferRange(gl.UNIFORM_BUFFER, 1, lightUbo, 0, 8 * 4)
+
+    var materialUbo uint32
+    gl.CreateBuffers(1, &materialUbo)
+    gl.NamedBufferStorage(materialUbo, 3 * 4, nil, gl.MAP_WRITE_BIT)
+    {
+        ptr := gl.MapNamedBuffer(materialUbo, gl.WRITE_ONLY)
+        material := (*[1]Material)(ptr)[:]
+        material[0] = Material{0.1, 0.8, 0.7}
+        gl.UnmapNamedBuffer(materialUbo)
+    }
+    gl.UniformBlockBinding(tessProgram, 2, 2)
+    gl.BindBufferRange(gl.UNIFORM_BUFFER, 2, materialUbo, 0, 3 * 4)
+
+    var cameraUbo uint32
+    gl.CreateBuffers(1, &cameraUbo)
+    gl.NamedBufferStorage(cameraUbo, 8 * 4, nil, gl.MAP_WRITE_BIT)
+    {
+        ptr := gl.MapNamedBuffer(cameraUbo, gl.WRITE_ONLY)
+        camera := (*[1]Camera)(ptr)[:]
+        camera[0] = Camera{mgl.Vec4{3, 4, 10, 1}, mgl.Vec4{0, 0, 0, 1}}
+        gl.UnmapNamedBuffer(cameraUbo)
+    }
+    gl.UniformBlockBinding(tessProgram, 3, 3)
+    gl.BindBufferRange(gl.UNIFORM_BUFFER, 3, cameraUbo, 0, 8 * 4)
 
 
     var socVao uint32
@@ -141,13 +195,13 @@ func main() {
         gl.NamedBufferStorage(vbo, 6 * 4 * 3, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(vbo, gl.WRITE_ONLY)
-            positions := (*[6]mgl32.Vec3)(ptr)[:]
-            positions[0] = mgl32.Vec3{1, 0, 0}
-            positions[1] = mgl32.Vec3{-1, 0, 0}
-            positions[2] = mgl32.Vec3{0, 1, 0}
-            positions[3] = mgl32.Vec3{0, -1, 0}
-            positions[4] = mgl32.Vec3{0, 0, 1}
-            positions[5] = mgl32.Vec3{0, 0, -1}
+            positions := (*[6]mgl.Vec3)(ptr)[:]
+            positions[0] = mgl.Vec3{1, 0, 0}
+            positions[1] = mgl.Vec3{-1, 0, 0}
+            positions[2] = mgl.Vec3{0, 1, 0}
+            positions[3] = mgl.Vec3{0, -1, 0}
+            positions[4] = mgl.Vec3{0, 0, 1}
+            positions[5] = mgl.Vec3{0, 0, -1}
             gl.UnmapNamedBuffer(vbo)
         }
         gl.VertexArrayVertexBuffer(socVao, 0, vbo, 0, 3 * 4)
@@ -157,30 +211,30 @@ func main() {
 
         var vco uint32
         gl.CreateBuffers(1, &vco)
-        gl.NamedBufferStorage(vco, 6 * 4, nil, gl.MAP_WRITE_BIT)
+        gl.NamedBufferStorage(vco, 6 * 3, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(vco, gl.WRITE_ONLY)
             colors := (*[6]Color)(ptr)[:]
-            colors[0] = Color{255, 0, 0, 255}
-            colors[1] = Color{0, 0, 255, 255}
-            colors[2] = Color{255, 0, 0, 255}
-            colors[3] = Color{0, 0, 255, 255}
-            colors[4] = Color{255, 0, 0, 255}
-            colors[5] = Color{0, 0, 255, 255}
+            colors[0] = Color{255, 0, 0}
+            colors[1] = Color{0, 0, 255}
+            colors[2] = Color{255, 0, 0}
+            colors[3] = Color{0, 0, 255}
+            colors[4] = Color{255, 0, 0}
+            colors[5] = Color{0, 0, 255}
             gl.UnmapNamedBuffer(vco)
         }
-        gl.VertexArrayVertexBuffer(socVao, 1, vco, 0, 4)
+        gl.VertexArrayVertexBuffer(socVao, 1, vco, 0, 3)
         gl.EnableVertexArrayAttrib(socVao, 1)
         gl.VertexArrayAttribBinding(socVao, 1, 1)
-        gl.VertexArrayAttribFormat(socVao, 1, 4, gl.UNSIGNED_BYTE, true, 0)
+        gl.VertexArrayAttribFormat(socVao, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
         var imbo uint32
         gl.CreateBuffers(1, &imbo)
         gl.NamedBufferStorage(imbo, 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[1]mgl32.Mat4)(ptr)[:]
-            models[0] = viewProjection.Mul4(mgl32.Scale3D(6, 6, 6))
+            models := (*[1]mgl.Mat4)(ptr)[:]
+            models[0] = mgl.Scale3D(6, 6, 6)
             gl.UnmapNamedBuffer(imbo)
         }
         gl.VertexArrayVertexBuffer(socVao, 2, imbo, 0, 4 * 4 * 4)
@@ -208,38 +262,19 @@ func main() {
         gl.NamedBufferStorage(vbo, 6 * 4 * 3, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(vbo, gl.WRITE_ONLY)
-            positions := (*[6]mgl32.Vec3)(ptr)[:]
-            positions[0] = mgl32.Vec3{0, 1, 0}
-            positions[1] = mgl32.Vec3{1, 0, 0}
-            positions[2] = mgl32.Vec3{0, 0, -1}
-            positions[3] = mgl32.Vec3{-1, 0, 0}
-            positions[4] = mgl32.Vec3{0, 0, 1}
-            positions[5] = mgl32.Vec3{0, -1, 0}
+            positions := (*[6]mgl.Vec3)(ptr)[:]
+            positions[0] = mgl.Vec3{0, 1, 0}
+            positions[1] = mgl.Vec3{1, 0, 0}
+            positions[2] = mgl.Vec3{0, 0, -1}
+            positions[3] = mgl.Vec3{-1, 0, 0}
+            positions[4] = mgl.Vec3{0, 0, 1}
+            positions[5] = mgl.Vec3{0, -1, 0}
             gl.UnmapNamedBuffer(vbo)
         }
         gl.VertexArrayVertexBuffer(sphereVao, 0, vbo, 0, 3 * 4)
         gl.EnableVertexArrayAttrib(sphereVao, 0)
         gl.VertexArrayAttribBinding(sphereVao, 0, 0)
         gl.VertexArrayAttribFormat(sphereVao, 0, 3, gl.FLOAT, false, 0)
-
-        var vco uint32
-        gl.CreateBuffers(1, &vco)
-        gl.NamedBufferStorage(vco, 6 * 4, nil, gl.MAP_WRITE_BIT)
-        {
-            ptr := gl.MapNamedBuffer(vco, gl.WRITE_ONLY)
-            colors := (*[6]Color)(ptr)[:]
-            colors[0] = Color{255,   0,   0, 255}
-            colors[1] = Color{  0, 255,   0, 255}
-            colors[2] = Color{255, 255, 255, 255}
-            colors[3] = Color{  0, 255,   0, 255}
-            colors[4] = Color{255, 255, 255, 255}
-            colors[5] = Color{  0,   0, 255, 255}
-            gl.UnmapNamedBuffer(vco)
-        }
-        gl.VertexArrayVertexBuffer(sphereVao, 1, vco, 0, 4)
-        gl.EnableVertexArrayAttrib(sphereVao, 1)
-        gl.VertexArrayAttribBinding(sphereVao, 1, 1)
-        gl.VertexArrayAttribFormat(sphereVao, 1, 4, gl.UNSIGNED_BYTE, true, 0)
 
         var ebo uint32
         gl.CreateBuffers(1, &ebo)
@@ -275,12 +310,27 @@ func main() {
         }
         gl.VertexArrayElementBuffer(sphereVao, ebo)
 
+        var vco uint32
+        gl.CreateBuffers(1, &vco)
+        gl.NamedBufferStorage(vco, 1 * 3, nil, gl.MAP_WRITE_BIT)
+        {
+            ptr := gl.MapNamedBuffer(vco, gl.WRITE_ONLY)
+            colors := (*[1]Color)(ptr)[:]
+            colors[0] = Color{255, 255, 255}
+            gl.UnmapNamedBuffer(vco)
+        }
+        gl.VertexArrayVertexBuffer(sphereVao, 1, vco, 0, 3)
+        gl.VertexArrayBindingDivisor(sphereVao, 1, 1)
+        gl.EnableVertexArrayAttrib(sphereVao, 1)
+        gl.VertexArrayAttribBinding(sphereVao, 1, 1)
+        gl.VertexArrayAttribFormat(sphereVao, 1, 3, gl.UNSIGNED_BYTE, true, 0)
+
         gl.CreateBuffers(1, &imbo)
         gl.NamedBufferStorage(imbo, 1 * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[1]mgl32.Mat4)(ptr)[:]
-            models[0] = viewProjection.Mul4(mgl32.Translate3D(2, 2, 0))
+            models := (*[1]mgl.Mat4)(ptr)[:]
+            models[0] = mgl.Translate3D(2, 2, 0)
             gl.UnmapNamedBuffer(imbo)
         }
         gl.VertexArrayVertexBuffer(sphereVao, 2, imbo, 0, 4 * 4 * 4)
@@ -309,22 +359,22 @@ func main() {
     gl.ClearColor(0, 0, 0, 1)
 
 
-    perpDir := func(direction mgl32.Vec3) mgl32.Vec3 {
+    perpDir := func(direction mgl.Vec3) mgl.Vec3 {
         switch {
         case direction.X() != 0:
-            return mgl32.Vec3{
+            return mgl.Vec3{
                 (-direction.Y() - direction.Z()) / direction.X(),
                 1,
                 1,
             }
         case direction.Y() != 0:
-            return mgl32.Vec3{
+            return mgl.Vec3{
                 1,
                 (-direction.X() - direction.Z()) / direction.Y(),
                 1,
             }
         case direction.Z() != 0:
-            return mgl32.Vec3{
+            return mgl.Vec3{
                 1,
                 1,
                 (-direction.X() - direction.Y()) / direction.Z(),
@@ -334,7 +384,7 @@ func main() {
         }
     }
 
-    pDir := perpDir(mgl32.Vec3{2, 2, 0}.Normalize()).Normalize()
+    pDir := perpDir(mgl.Vec3{2, 2, 0}.Normalize()).Normalize()
     distPerSec := (2 * math.Pi) / 16
     var time, loopStart float64
     for !window.ShouldClose() {
@@ -342,12 +392,12 @@ func main() {
 
         // animating
         {
-            rotate := mgl32.HomogRotate3D(float32(time * distPerSec), pDir)
-            translate := mgl32.Translate3D(2, 2, 0)
+            rotate := mgl.HomogRotate3D(float32(time * distPerSec), pDir)
+            translate := mgl.Translate3D(2, 2, 0)
 
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[1]mgl32.Mat4)(ptr)[:]
-            models[0] = viewProjection.Mul4(rotate).Mul4(translate)
+            models := (*[1]mgl.Mat4)(ptr)[:]
+            models[0] = rotate.Mul4(translate)
             gl.UnmapNamedBuffer(imbo)
         }
 

@@ -13,8 +13,8 @@ out mat4 tc_model[];
 
 
 void main() {
-    gl_TessLevelInner[0] = 8;
-    gl_TessLevelOuter[gl_InvocationID] = 7;
+    gl_TessLevelInner[0] = 24;
+    gl_TessLevelOuter[gl_InvocationID] = 23;
 
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
     tc_color[gl_InvocationID] = v_color[gl_InvocationID];
