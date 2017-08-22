@@ -2,7 +2,7 @@ OpenGL Test
 ===========
 
 Playing around with OpenGL on Win7(64) within a msys2 using go and go-gl
-(openGL 4.5 with GLOW and GLFW).
+(OpenGL 4.5 with GLOW and GLFW).
 
 Zip package contains executable compiled on Win7(64) and all nessecary files.
 
