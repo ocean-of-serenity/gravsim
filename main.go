@@ -34,24 +34,28 @@ type Camera struct {
 }
 
 
+const (
+    initWindowWidth = 1280
+    initWindowHeight = 720
+    minWindowWidth = 512
+    minWindowHeight = 288
+)
+
+
 func main() {
     if err := glfw.Init(); err != nil {
         log.Fatalln("Failed to initialize glfw:", err)
     }
     defer glfw.Terminate()
 
-    glfw.WindowHint(glfw.Resizable, glfw.False)
     glfw.WindowHint(glfw.ContextVersionMajor, 4)
     glfw.WindowHint(glfw.ContextVersionMinor, 5)
     glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
     glfw.WindowHint(glfw.Samples, 16)
 
-    windowWidth := 1280
-    windowHeight := 720
-
     window, err := glfw.CreateWindow(
-        windowWidth,
-        windowHeight,
+        initWindowWidth,
+        initWindowHeight,
         "OpenGL Test",
         nil,
         nil,
@@ -62,6 +66,12 @@ func main() {
     defer window.Destroy()
 
     window.MakeContextCurrent()
+    window.SetSizeLimits(
+        minWindowWidth,
+        minWindowHeight,
+        glfw.DontCare,
+        glfw.DontCare,
+    )
 
     if err := gl.Init(); err != nil {
         log.Fatalln("Failed to initialize glow", err)
@@ -131,23 +141,75 @@ func main() {
 
     projection := mgl.Perspective(
         math.Pi / 4,
-        float32(windowWidth) / float32(windowHeight),
+        float32(initWindowWidth) / float32(initWindowHeight),
         4,
         20,
     )
+    tpProjLoc := gl.GetUniformLocation(tessProgram, gl.Str("projection\x00"))
+    gpProjLoc := gl.GetUniformLocation(generalProgram, gl.Str("projection\x00"))
+    gl.ProgramUniformMatrix4fv(
+        tessProgram,
+        tpProjLoc,
+        1,
+        false,
+        &projection[0],
+    )
+    gl.ProgramUniformMatrix4fv(
+        generalProgram,
+        gpProjLoc,
+        1,
+        false,
+        &projection[0],
+    )
+
+    resizeWindow := func(_ *glfw.Window, width, height int) {
+        gl.Viewport(0, 0, int32(width), int32(height))
+
+        projection = mgl.Perspective(
+            math.Pi / 4 * (float32(height) / float32(initWindowHeight)),
+            float32(width) / float32(height),
+            4,
+            20,
+        )
+
+        gl.ProgramUniformMatrix4fv(
+            tessProgram,
+            tpProjLoc,
+            1,
+            false,
+            &projection[0],
+        )
+        gl.ProgramUniformMatrix4fv(
+            generalProgram,
+            gpProjLoc,
+            1,
+            false,
+            &projection[0],
+        )
+    }
+    window.SetFramebufferSizeCallback(resizeWindow)
 
     view := mgl.LookAtV(
         mgl.Vec3{3, 4, 10},
         mgl.Vec3{0, 0, 0},
         mgl.Vec3{0, 1, 0},
     )
-
-    viewProjection := projection.Mul4(view)
-
-    uLocVP := gl.GetUniformLocation(tessProgram, gl.Str("view_projection\x00"))
-    gl.ProgramUniformMatrix4fv(tessProgram, uLocVP, 1, false, &viewProjection[0])
-    uLocVP = gl.GetUniformLocation(generalProgram, gl.Str("view_projection\x00"))
-    gl.ProgramUniformMatrix4fv(generalProgram, uLocVP, 1, false, &viewProjection[0])
+    tpViewLoc := gl.GetUniformLocation(tessProgram, gl.Str("view\x00"))
+    gpViewLoc := gl.GetUniformLocation(generalProgram, gl.Str("view\x00"))
+    gl.ProgramUniformMatrix4fv(
+        tessProgram,
+        tpViewLoc,
+        1,
+        false,
+        &view[0],
+    )
+    gl.ProgramUniformMatrix4fv(
+        generalProgram,
+        gpViewLoc,
+        1,
+        false,
+        &view[0],
+    )
 
 
     var lightUbo uint32
@@ -168,7 +230,7 @@ func main() {
     {
         ptr := gl.MapNamedBuffer(materialUbo, gl.WRITE_ONLY)
         material := (*[1]Material)(ptr)[:]
-        material[0] = Material{0.1, 0.8, 0.7}
+        material[0] = Material{0.4, 0.6, 0.8}
         gl.UnmapNamedBuffer(materialUbo)
     }
     gl.UniformBlockBinding(tessProgram, 2, 2)
