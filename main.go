@@ -42,6 +42,22 @@ const (
 )
 
 
+const (
+    RotationSpeed = (2 * math.Pi) / 8
+)
+
+
+type Directions struct {
+    startLeft, startRight, startUp, startDown bool
+    stopLeft, stopRight, stopUp, stopDown bool
+}
+
+var directions Directions
+
+var cameraRootLocation mgl.Vec3 = mgl.Vec3{3, 4, 10}
+var cameraWatchLocation mgl.Vec3 = mgl.Vec3{0, 0, 0}
+
+
 func main() {
     if err := glfw.Init(); err != nil {
         log.Fatalln("Failed to initialize glfw:", err)
@@ -190,8 +206,8 @@ func main() {
     window.SetFramebufferSizeCallback(resizeWindow)
 
     view := mgl.LookAtV(
-        mgl.Vec3{3, 4, 10},
-        mgl.Vec3{0, 0, 0},
+        cameraRootLocation,
+        cameraWatchLocation,
         mgl.Vec3{0, 1, 0},
     )
     tpViewLoc := gl.GetUniformLocation(tessProgram, gl.Str("view\x00"))
@@ -209,6 +225,47 @@ func main() {
         1,
         false,
         &view[0],
+    )
+
+    window.SetKeyCallback(
+        func(
+            _ *glfw.Window,
+            key glfw.Key,
+            scancode int,
+            action glfw.Action,
+            mods glfw.ModifierKey,
+        ) {
+            switch key {
+            case glfw.KeyA:
+                switch action {
+                case glfw.Press:
+                    directions.startLeft = true
+                case glfw.Release:
+                    directions.stopLeft = true
+                }
+            case glfw.KeyD:
+                switch action {
+                case glfw.Press:
+                    directions.startRight = true
+                case glfw.Release:
+                    directions.stopRight = true
+                }
+            case glfw.KeyW:
+                switch action {
+                case glfw.Press:
+                    directions.startUp = true
+                case glfw.Release:
+                    directions.stopUp = true
+                }
+            case glfw.KeyS:
+                switch action {
+                case glfw.Press:
+                    directions.startDown = true
+                case glfw.Release:
+                    directions.stopDown = true
+                }
+            }
+        },
     )
 
 
@@ -448,7 +505,7 @@ func main() {
 
     pDir := perpDir(mgl.Vec3{2, 2, 0}.Normalize()).Normalize()
     distPerSec := (2 * math.Pi) / 16
-    var time, loopStart float64
+    var time, loopStart, secondsPerFrame float64
     for !window.ShouldClose() {
         loopStart = glfw.GetTime()
 
@@ -461,6 +518,183 @@ func main() {
             models := (*[1]mgl.Mat4)(ptr)[:]
             models[0] = rotate.Mul4(translate)
             gl.UnmapNamedBuffer(imbo)
+        }
+
+        // input handling
+        if directions.startLeft {
+            if !directions.startRight {
+                rotate := mgl.HomogRotate3D(
+                    -float32(secondsPerFrame * RotationSpeed),
+                    mgl.Vec3{0, 1, 0},
+                )
+                cameraRootLocation = rotate.Mul4x1(
+                    cameraRootLocation.Vec4(1),
+                ).Vec3()
+                view = mgl.LookAtV(
+                    cameraRootLocation,
+                    cameraWatchLocation,
+                    mgl.Vec3{0, 1, 0},
+                )
+                gl.ProgramUniformMatrix4fv(
+                    tessProgram,
+                    tpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                gl.ProgramUniformMatrix4fv(
+                    generalProgram,
+                    gpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                ptr := gl.MapNamedBuffer(cameraUbo, gl.WRITE_ONLY)
+                camera := (*[1]Camera)(ptr)[:]
+                camera[0] = Camera{
+                    cameraRootLocation.Vec4(1),
+                    cameraWatchLocation.Vec4(1),
+                }
+                gl.UnmapNamedBuffer(cameraUbo)
+            }
+
+            if directions.stopLeft {
+                directions.startLeft = false
+                directions.stopLeft = false
+            }
+        }
+
+        if directions.startRight {
+            if !directions.startLeft {
+                rotate := mgl.HomogRotate3D(
+                    float32(secondsPerFrame * RotationSpeed),
+                    mgl.Vec3{0, 1, 0},
+                )
+                cameraRootLocation = rotate.Mul4x1(
+                    cameraRootLocation.Vec4(1),
+                ).Vec3()
+                view = mgl.LookAtV(
+                    cameraRootLocation,
+                    cameraWatchLocation,
+                    mgl.Vec3{0, 1, 0},
+                )
+                gl.ProgramUniformMatrix4fv(
+                    tessProgram,
+                    tpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                gl.ProgramUniformMatrix4fv(
+                    generalProgram,
+                    gpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                ptr := gl.MapNamedBuffer(cameraUbo, gl.WRITE_ONLY)
+                camera := (*[1]Camera)(ptr)[:]
+                camera[0] = Camera{
+                    cameraRootLocation.Vec4(1),
+                    cameraWatchLocation.Vec4(1),
+                }
+                gl.UnmapNamedBuffer(cameraUbo)
+            }
+
+            if directions.stopRight {
+                directions.startRight = false
+                directions.stopRight = false
+            }
+        }
+
+        if directions.startUp {
+            upDot := mgl.Vec3{0, 1, 0}.Dot(cameraRootLocation.Normalize())
+            if !directions.startDown && upDot < 0.99 {
+                axis := mgl.Vec3{0, 1, 0}.Cross(cameraRootLocation).Normalize()
+                rotate := mgl.HomogRotate3D(
+                    -float32(secondsPerFrame * RotationSpeed),
+                    axis,
+                )
+                cameraRootLocation = rotate.Mul4x1(
+                    cameraRootLocation.Vec4(1),
+                ).Vec3()
+                view = mgl.LookAtV(
+                    cameraRootLocation,
+                    cameraWatchLocation,
+                    mgl.Vec3{0, 1, 0},
+                )
+                gl.ProgramUniformMatrix4fv(
+                    tessProgram,
+                    tpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                gl.ProgramUniformMatrix4fv(
+                    generalProgram,
+                    gpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                ptr := gl.MapNamedBuffer(cameraUbo, gl.WRITE_ONLY)
+                camera := (*[1]Camera)(ptr)[:]
+                camera[0] = Camera{
+                    cameraRootLocation.Vec4(1),
+                    cameraWatchLocation.Vec4(1),
+                }
+                gl.UnmapNamedBuffer(cameraUbo)
+            }
+
+            if directions.stopUp {
+                directions.startUp = false
+                directions.stopUp = false
+            }
+        }
+
+        if directions.startDown {
+            downDot := mgl.Vec3{0, -1, 0}.Dot(cameraRootLocation.Normalize())
+            if !directions.startUp && downDot < 0.99 {
+                axis := mgl.Vec3{0, 1, 0}.Cross(cameraRootLocation).Normalize()
+                rotate := mgl.HomogRotate3D(
+                    float32(secondsPerFrame * RotationSpeed),
+                    axis,
+                )
+                cameraRootLocation = rotate.Mul4x1(
+                    cameraRootLocation.Vec4(1),
+                ).Vec3()
+                view = mgl.LookAtV(
+                    cameraRootLocation,
+                    cameraWatchLocation,
+                    mgl.Vec3{0, 1, 0},
+                )
+                gl.ProgramUniformMatrix4fv(
+                    tessProgram,
+                    tpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                gl.ProgramUniformMatrix4fv(
+                    generalProgram,
+                    gpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                ptr := gl.MapNamedBuffer(cameraUbo, gl.WRITE_ONLY)
+                camera := (*[1]Camera)(ptr)[:]
+                camera[0] = Camera{
+                    cameraRootLocation.Vec4(1),
+                    cameraWatchLocation.Vec4(1),
+                }
+                gl.UnmapNamedBuffer(cameraUbo)
+            }
+
+            if directions.stopDown {
+                directions.startDown = false
+                directions.stopDown = false
+            }
         }
 
         // rendering
@@ -483,7 +717,8 @@ func main() {
         // event handling
         glfw.PollEvents()
 
-        time += glfw.GetTime() - loopStart
+        secondsPerFrame = glfw.GetTime() - loopStart
+        time += secondsPerFrame
     }
 }
 
