@@ -6,26 +6,30 @@ uniform mat4 projection;
 uniform mat4 view;
 
 layout(triangles, equal_spacing) in;
-in vec4 tc_color[];
-in mat4 tc_model[];
+in tcs {
+    vec4 color;
+    mat4 model;
+} in_[];
 
-out vec3 te_position;
-out vec3 te_normal;
-out vec4 te_color;
+out tes {
+    vec3 position;
+    vec3 normal;
+    vec4 color;
+} out_;
 
 
 void main() {
     vec3 p0 = gl_TessCoord.x * gl_in[0].gl_Position.xyz;
     vec3 p1 = gl_TessCoord.y * gl_in[1].gl_Position.xyz;
     vec3 p2 = gl_TessCoord.z * gl_in[2].gl_Position.xyz;
-    vec4 v_pos = vec4(normalize(p0 + p1 + p2), 1);
-    te_position = (tc_model[0] * v_pos).xyz;
-    te_normal = normalize(te_position - tc_model[0][3].xyz);
-    gl_Position = projection * (view * tc_model[0]) * v_pos;
+    vec4 position = vec4(normalize(p0 + p1 + p2), 1);
+    out_.position = (in_[0].model * position).xyz;
+    out_.normal = normalize(out_.position - in_[0].model[3].xyz);
+    gl_Position = projection * (view * in_[0].model) * position;
 
-    vec4 c0 = gl_TessCoord.x * tc_color[0];
-    vec4 c1 = gl_TessCoord.y * tc_color[1];
-    vec4 c2 = gl_TessCoord.z * tc_color[2];
-    te_color = c0 + c1 + c2;
+    vec4 c0 = gl_TessCoord.x * in_[0].color;
+    vec4 c1 = gl_TessCoord.y * in_[1].color;
+    vec4 c2 = gl_TessCoord.z * in_[2].color;
+    out_.color = c0 + c1 + c2;
 }
 

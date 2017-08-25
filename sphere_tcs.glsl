@@ -2,14 +2,16 @@
 #version 450 core
 
 
-layout(vertices = 3) out;
+in vs {
+    vec4 color;
+    mat4 model;
+} in_[];
 
-
-in vec4 v_color[];
-in mat4 v_model[];
-
-out vec4 tc_color[];
-out mat4 tc_model[];
+layout(vertices=3) out;
+out tcs {
+    vec4 color;
+    mat4 model;
+} out_[];
 
 
 void main() {
@@ -17,7 +19,7 @@ void main() {
     gl_TessLevelOuter[gl_InvocationID] = 23;
 
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
-    tc_color[gl_InvocationID] = v_color[gl_InvocationID];
-    tc_model[gl_InvocationID] = v_model[gl_InvocationID];
+    out_[gl_InvocationID].color = in_[gl_InvocationID].color;
+    out_[gl_InvocationID].model = in_[gl_InvocationID].model;
 }
 

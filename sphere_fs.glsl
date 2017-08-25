@@ -3,38 +3,39 @@
 
 
 layout(std140, binding=1) uniform Light {
-    vec3 l_position;
-    vec3 l_color;
-};
+    vec3 position;
+    vec3 color;
+} light;
 
-layout(std140, binding=2) uniform Material {
-    float m_ambient;
-    float m_diffuse;
-    float m_specular;
-};
+uniform float ambient_part;
+uniform float diffuse_part;
+uniform float specular_part;
 
-layout(std140, binding=3) uniform Camera {
-    vec3 c_root;
-    vec3 c_watch;
-};
+uniform vec3 camera_location;
 
-in vec3 te_position;
-in vec3 te_normal;
-in vec4 te_color;
+in tes {
+    vec3 position;
+    vec3 normal;
+    vec4 color;
+} in_;
 
-out vec4 f_color;
+layout(location=0) out vec4 color;
 
 
 void main() {
-    vec3 ambient = l_color * m_ambient;
+    vec3 ambient = light.color * ambient_part;
 
-    vec3 light_direction = normalize(l_position - te_position);
-    vec3 diffuse = l_color * max(dot(te_normal, light_direction), 0) * m_diffuse;
+    vec3 light_direction = normalize(light.position - in_.position);
+    vec3 diffuse =  light.color *
+                    max(dot(in_.normal, light_direction), 0) *
+                    diffuse_part;
 
-    vec3 view_direction = normalize(c_root - te_position);
-    vec3 reflect_direction = reflect(-light_direction, te_normal);
-    vec3 specular = l_color * pow(max(dot(view_direction, reflect_direction), 0), 32) * m_specular;
+    vec3 view_direction = normalize(camera_location - in_.position);
+    vec3 reflect_direction = reflect(-light_direction, in_.normal);
+    vec3 specular = light.color *
+                    pow(max(dot(view_direction, reflect_direction), 0), 32) *
+                    specular_part;
 
-    f_color = vec4((ambient + diffuse + specular) * te_color.rgb, te_color.a);
+    color = vec4((ambient + diffuse + specular) * in_.color.rgb, in_.color.a);
 }
 

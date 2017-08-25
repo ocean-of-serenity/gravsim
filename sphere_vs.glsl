@@ -2,17 +2,19 @@
 #version 450 core
 
 
-layout (location = 0) in vec4 position;
-layout (location = 1) in vec4 color;
-layout (location = 2) in mat4 model;
+layout(location=0) in vec4 position;
+layout(location=1) in vec4 color;
+layout(location=2) in mat4 model;
 
-out vec4 v_color;
-out mat4 v_model;
+out vs {
+    vec4 color;
+    mat4 model;
+} out_;
 
 
 void main() {
     gl_Position = position;
-    v_color = color;
-    v_model = model;
+    out_.color = color;
+    out_.model = model;
 }
 
