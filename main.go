@@ -49,6 +49,9 @@ const (
 
 var directions Directions
 
+var scrolling bool
+var scrollDirection float32
+
 var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
 
 
@@ -152,8 +155,8 @@ func main() {
     projection := mgl.Perspective(
         math.Pi / 4,
         float32(initWindowWidth) / float32(initWindowHeight),
-        4,
-        20,
+        0.1,
+        40,
     )
     tpProjLoc := gl.GetUniformLocation(tessProgram, gl.Str("projection\x00"))
     gpProjLoc := gl.GetUniformLocation(generalProgram, gl.Str("projection\x00"))
@@ -178,8 +181,8 @@ func main() {
         projection = mgl.Perspective(
             math.Pi / 4 * (float32(height) / float32(initWindowHeight)),
             float32(width) / float32(height),
-            4,
-            20,
+            0.1,
+            40,
         )
 
         gl.ProgramUniformMatrix4fv(
@@ -261,6 +264,11 @@ func main() {
             }
         },
     )
+
+    window.SetScrollCallback(func(_ *glfw.Window, xOffset, yOffset float64) {
+        scrollDirection = float32(yOffset)
+        scrolling = true
+    })
 
 
     var lightUbo uint32
@@ -663,6 +671,39 @@ func main() {
                 directions.startDown = false
                 directions.stopDown = false
             }
+        }
+
+        if scrolling {
+            scroll := camera.root.Normalize().Mul(-scrollDirection / 3)
+            newRoot := camera.root.Add(scroll)
+            newRootLength := newRoot.Len()
+            if newRootLength > 1 && newRootLength < 30 {
+                camera.root = newRoot
+                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                gl.ProgramUniformMatrix4fv(
+                    tessProgram,
+                    tpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+                gl.ProgramUniformMatrix4fv(
+                    generalProgram,
+                    gpViewLoc,
+                    1,
+                    false,
+                    &view[0],
+                )
+
+                gl.ProgramUniform3fv(
+                    tessProgram,
+                    tpCamLoc,
+                    1,
+                    &camera.root[0],
+                )
+            }
+
+            scrolling = false
         }
 
         // rendering
