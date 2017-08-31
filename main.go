@@ -288,12 +288,6 @@ func main() {
     tpAmbLoc := gl.GetUniformLocation(tessProgram, gl.Str("ambient_part\x00"))
     gl.ProgramUniform1f(tessProgram, tpAmbLoc, 0.4)
 
-    tpDifLoc := gl.GetUniformLocation(tessProgram, gl.Str("diffuse_part\x00"))
-    gl.ProgramUniform1f(tessProgram, tpDifLoc, 0.6)
-
-    tpSpeLoc := gl.GetUniformLocation(tessProgram, gl.Str("specular_part\x00"))
-    gl.ProgramUniform1f(tessProgram, tpSpeLoc, 0.8)
-
     tpCamLoc := gl.GetUniformLocation(
         tessProgram,
         gl.Str("camera_location\x00"),
@@ -431,11 +425,14 @@ func main() {
 
         var vco uint32
         gl.CreateBuffers(1, &vco)
-        gl.NamedBufferStorage(vco, 1 * 3, nil, gl.MAP_WRITE_BIT)
+        gl.NamedBufferStorage(vco, 4 * 3, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(vco, gl.WRITE_ONLY)
-            colors := (*[1]Color)(ptr)[:]
+            colors := (*[4]Color)(ptr)[:]
             colors[0] = Color{255, 255, 255}
+            colors[1] = Color{  0,   0, 255}
+            colors[2] = Color{255,   0,   0}
+            colors[3] = Color{  0, 255,   0}
             gl.UnmapNamedBuffer(vco)
         }
         gl.VertexArrayVertexBuffer(sphereVao, 1, vco, 0, 3)
@@ -445,14 +442,17 @@ func main() {
         gl.VertexArrayAttribFormat(sphereVao, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
         gl.CreateBuffers(1, &imbo)
-        gl.NamedBufferStorage(imbo, 1 * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
+        gl.NamedBufferStorage(imbo, 4 * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[1]mgl.Mat4)(ptr)[:]
-            models[0] = mgl.Translate3D(2, 2, 0)
+            models := (*[4]mgl.Mat4)(ptr)[:]
+            models[0] = mgl.Translate3D( 0,  0,  0)
+            models[1] = mgl.Translate3D( 2,  2,  0)
+            models[2] = mgl.Translate3D(-4,  1,  0)
+            models[3] = mgl.Translate3D( 0, -3,  6)
             gl.UnmapNamedBuffer(imbo)
         }
-        gl.VertexArrayVertexBuffer(sphereVao, 2, imbo, 0, 4 * 4 * 4)
+        gl.VertexArrayVertexBuffer(sphereVao, 2, imbo, 0, 1 * 4 * 4 * 4)
         gl.VertexArrayBindingDivisor(sphereVao, 2, 1)
         for i := uint32(0); i < 4; i++ {
             gl.EnableVertexArrayAttrib(sphereVao, 2 + i)
@@ -503,7 +503,18 @@ func main() {
         }
     }
 
-    pDir := perpDir(mgl.Vec3{2, 2, 0}.Normalize()).Normalize()
+    positions := []mgl.Vec3{
+        mgl.Vec3{0, 0, 0},
+        mgl.Vec3{2, 2, 0},
+        mgl.Vec3{-4, 1, 0},
+        mgl.Vec3{0, -3, 6},
+    }[:]
+
+    pDirs := make([]mgl.Vec3, 3)
+    for i := range pDirs {
+        pDirs[i] = perpDir(positions[i + 1].Normalize()).Normalize()
+    }
+
     distPerSec := (2 * math.Pi) / 16
     var time, loopStart, secondsPerFrame float64
     for !window.ShouldClose() {
@@ -511,12 +522,16 @@ func main() {
 
         // animating
         {
-            rotate := mgl.HomogRotate3D(float32(time * distPerSec), pDir)
-            translate := mgl.Translate3D(2, 2, 0)
-
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[1]mgl.Mat4)(ptr)[:]
-            models[0] = rotate.Mul4(translate)
+            models := (*[4]mgl.Mat4)(ptr)[:]
+            pos := positions[0]
+            models[0] = mgl.Translate3D(pos.X(), pos.Y(), pos.Z())
+            for i, pDir := range pDirs {
+                rotate := mgl.HomogRotate3D(float32(time * distPerSec), pDir)
+                pos = positions[i + 1]
+                translate := mgl.Translate3D(pos.X(), pos.Y(), pos.Z())
+                models[i + 1] = rotate.Mul4(translate)
+            }
             gl.UnmapNamedBuffer(imbo)
         }
 
@@ -717,7 +732,7 @@ func main() {
 
         gl.UseProgram(tessProgram)
         gl.BindVertexArray(sphereVao)
-        gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, 1)
+        gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, 4)
         gl.BindVertexArray(0)
         gl.UseProgram(0)
 

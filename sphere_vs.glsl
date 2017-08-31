@@ -9,6 +9,7 @@ layout(location=2) in mat4 model;
 out vs {
     vec4 color;
     mat4 model;
+    uint instance;
 } out_;
 
 
@@ -16,5 +17,6 @@ void main() {
     gl_Position = position;
     out_.color = color;
     out_.model = model;
+    out_.instance = gl_InstanceID;
 }
 

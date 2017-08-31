@@ -9,12 +9,14 @@ layout(triangles, equal_spacing) in;
 in tcs {
     vec4 color;
     mat4 model;
+    uint instance;
 } in_[];
 
 out tes {
     vec3 position;
     vec3 normal;
     vec4 color;
+    uint instance;
 } out_;
 
 
@@ -31,5 +33,7 @@ void main() {
     vec4 c1 = gl_TessCoord.y * in_[1].color;
     vec4 c2 = gl_TessCoord.z * in_[2].color;
     out_.color = c0 + c1 + c2;
+
+    out_.instance = in_[0].instance;
 }
 
