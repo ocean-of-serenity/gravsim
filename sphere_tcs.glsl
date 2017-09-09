@@ -17,8 +17,8 @@ out tcs {
 
 
 void main() {
-    gl_TessLevelInner[0] = 32;
-    gl_TessLevelOuter[gl_InvocationID] = 31;
+    gl_TessLevelInner[0] = 16;
+    gl_TessLevelOuter[gl_InvocationID] = 17;
 
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
     out_[gl_InvocationID].color = in_[gl_InvocationID].color;

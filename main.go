@@ -10,6 +10,7 @@ import (
     "os"
     "runtime"
     "strings"
+    "math/rand"
 
     "github.com/go-gl/gl/v4.5-core/gl"
     "github.com/go-gl/glfw/v3.2/glfw"
@@ -46,6 +47,10 @@ const (
     RotationSpeed = (2 * math.Pi) / 8
 )
 
+const (
+    numSpheres = 256 * 256
+)
+
 
 var directions Directions
 
@@ -64,7 +69,6 @@ func main() {
     glfw.WindowHint(glfw.ContextVersionMajor, 4)
     glfw.WindowHint(glfw.ContextVersionMinor, 5)
     glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-    glfw.WindowHint(glfw.Samples, 16)
 
     window, err := glfw.CreateWindow(
         initWindowWidth,
@@ -149,6 +153,22 @@ func main() {
         gl.DeleteShader(tes)
         gl.DeleteShader(tcs)
         gl.DeleteShader(vs)
+    }
+
+    var computeProgram uint32
+    {
+        cs, err := newShader("sphere_cs.glsl", gl.COMPUTE_SHADER)
+        if err != nil {
+            log.Fatalln(err)
+        }
+
+        computeProgram, err = newComputeProgram(cs)
+        if err != nil {
+            log.Fatalln(err)
+        }
+        defer gl.DeleteProgram(computeProgram)
+
+        gl.DeleteShader(cs)
     }
 
 
@@ -283,7 +303,7 @@ func main() {
         }
     }
     gl.UniformBlockBinding(tessProgram, 1, 1)
-    gl.BindBufferRange(gl.UNIFORM_BUFFER, 1, lightUbo, 0, 2 * 4 * 4)
+    gl.BindBufferBase(gl.UNIFORM_BUFFER, 1, lightUbo)
 
     tpAmbLoc := gl.GetUniformLocation(tessProgram, gl.Str("ambient_part\x00"))
     gl.ProgramUniform1f(tessProgram, tpAmbLoc, 0.4)
@@ -298,6 +318,9 @@ func main() {
         1,
         &camera.root[0],
     )
+
+
+    cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("distance\x00"))
 
 
     var socVao uint32
@@ -347,7 +370,7 @@ func main() {
         {
             ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
             models := (*[1]mgl.Mat4)(ptr)[:]
-            models[0] = mgl.Scale3D(6, 6, 6)
+            models[0] = mgl.Scale3D(12, 12, 12)
             gl.UnmapNamedBuffer(imbo)
         }
         gl.VertexArrayVertexBuffer(socVao, 2, imbo, 0, 4 * 4 * 4)
@@ -366,9 +389,8 @@ func main() {
         }
     }
 
-    var sphereVao uint32
+    var sphereVao, sphereImbo, sphereIabo uint32
     gl.CreateVertexArrays(1, &sphereVao)
-    var imbo uint32
     {
         var vbo uint32
         gl.CreateBuffers(1, &vbo)
@@ -425,14 +447,18 @@ func main() {
 
         var vco uint32
         gl.CreateBuffers(1, &vco)
-        gl.NamedBufferStorage(vco, 4 * 3, nil, gl.MAP_WRITE_BIT)
+        gl.NamedBufferStorage(vco, numSpheres * 3, nil, gl.MAP_WRITE_BIT)
         {
             ptr := gl.MapNamedBuffer(vco, gl.WRITE_ONLY)
-            colors := (*[4]Color)(ptr)[:]
+            colors := (*[numSpheres]Color)(ptr)[:]
             colors[0] = Color{255, 255, 255}
-            colors[1] = Color{  0,   0, 255}
-            colors[2] = Color{255,   0,   0}
-            colors[3] = Color{  0, 255,   0}
+            for i := 1; i < numSpheres; i++ {
+                colors[i] = Color{
+                    uint8(rand.Float32() * 255),
+                    uint8(rand.Float32() * 255),
+                    uint8(rand.Float32() * 255),
+                }
+            }
             gl.UnmapNamedBuffer(vco)
         }
         gl.VertexArrayVertexBuffer(sphereVao, 1, vco, 0, 3)
@@ -441,18 +467,34 @@ func main() {
         gl.VertexArrayAttribBinding(sphereVao, 1, 1)
         gl.VertexArrayAttribFormat(sphereVao, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
-        gl.CreateBuffers(1, &imbo)
-        gl.NamedBufferStorage(imbo, 4 * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
-        {
-            ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[4]mgl.Mat4)(ptr)[:]
-            models[0] = mgl.Translate3D( 0,  0,  0)
-            models[1] = mgl.Translate3D( 2,  2,  0)
-            models[2] = mgl.Translate3D(-4,  1,  0)
-            models[3] = mgl.Translate3D( 0, -3,  6)
-            gl.UnmapNamedBuffer(imbo)
+        var positions [numSpheres]mgl.Vec3
+        positions[0] = mgl.Vec3{0, 0, 0}
+        for i := 1; i < numSpheres; i++ {
+            positions[i] = mgl.Vec3{
+                rand.Float32() * 24 - 12,
+                rand.Float32() * 24 - 12,
+                rand.Float32() * 24 - 12,
+            }
         }
-        gl.VertexArrayVertexBuffer(sphereVao, 2, imbo, 0, 1 * 4 * 4 * 4)
+
+        gl.CreateBuffers(1, &sphereImbo)
+        gl.NamedBufferStorage(sphereImbo, numSpheres * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
+        {
+            ptr := gl.MapNamedBuffer(sphereImbo, gl.WRITE_ONLY)
+            models := (*[numSpheres]mgl.Mat4)(ptr)[:]
+
+            models[0] = mgl.Translate3D(0, 0, 0).Mul4(mgl.Scale3D(0.4, 0.4, 0.4))
+            for i := 1; i < numSpheres; i++ {
+                x := positions[i].X()
+                y := positions[i].Y()
+                z := positions[i].Z()
+                models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(0.04, 0.04, 0.04))
+            }
+
+            gl.UnmapNamedBuffer(sphereImbo)
+        }
+
+        gl.VertexArrayVertexBuffer(sphereVao, 2, sphereImbo, 0, 4 * 4 * 4)
         gl.VertexArrayBindingDivisor(sphereVao, 2, 1)
         for i := uint32(0); i < 4; i++ {
             gl.EnableVertexArrayAttrib(sphereVao, 2 + i)
@@ -466,54 +508,58 @@ func main() {
                 4 * 4 * i,
             )
         }
-    }
 
-
-//    gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
-
-    gl.Enable(gl.DEPTH_TEST)
-
-    gl.Enable(gl.MULTISAMPLE)
-
-    gl.ClearColor(0, 0, 0, 1)
-
-
-    perpDir := func(direction mgl.Vec3) mgl.Vec3 {
-        switch {
-        case direction.X() != 0:
-            return mgl.Vec3{
-                (-direction.Y() - direction.Z()) / direction.X(),
-                1,
-                1,
+        gl.CreateBuffers(1, &sphereIabo)
+        gl.NamedBufferStorage(sphereIabo, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
+        {
+            perpDir := func(direction mgl.Vec3) mgl.Vec3 {
+                switch {
+                case direction.X() != 0:
+                    return mgl.Vec3{
+                        (-direction.Y() - direction.Z()) / direction.X(),
+                        1,
+                        1,
+                    }
+                case direction.Y() != 0:
+                    return mgl.Vec3{
+                        1,
+                        (-direction.X() - direction.Z()) / direction.Y(),
+                        1,
+                    }
+                case direction.Z() != 0:
+                    return mgl.Vec3{
+                        1,
+                        1,
+                        (-direction.X() - direction.Y()) / direction.Z(),
+                    }
+                default:
+                    return direction
+                }
             }
-        case direction.Y() != 0:
-            return mgl.Vec3{
-                1,
-                (-direction.X() - direction.Z()) / direction.Y(),
-                1,
+
+            ptr := gl.MapNamedBuffer(sphereIabo, gl.WRITE_ONLY)
+            axiis := (*[numSpheres]mgl.Vec4)(ptr)[:]
+
+            axiis[0] = mgl.Vec4{0, 0, 0, 1}
+            for i := 1; i < numSpheres; i++ {
+                axiis[i] = perpDir(positions[i]).Vec4(1)
             }
-        case direction.Z() != 0:
-            return mgl.Vec3{
-                1,
-                1,
-                (-direction.X() - direction.Y()) / direction.Z(),
-            }
-        default:
-            return direction
+
+            gl.UnmapNamedBuffer(sphereIabo)
         }
     }
 
-    positions := []mgl.Vec3{
-        mgl.Vec3{0, 0, 0},
-        mgl.Vec3{2, 2, 0},
-        mgl.Vec3{-4, 1, 0},
-        mgl.Vec3{0, -3, 6},
-    }[:]
+    gl.ShaderStorageBlockBinding(computeProgram, 1, 1)
+    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, sphereImbo)
 
-    pDirs := make([]mgl.Vec3, 3)
-    for i := range pDirs {
-        pDirs[i] = perpDir(positions[i + 1].Normalize()).Normalize()
-    }
+    gl.ShaderStorageBlockBinding(computeProgram, 2, 2)
+    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, sphereIabo)
+
+
+    gl.Enable(gl.DEPTH_TEST)
+
+    gl.ClearColor(0, 0, 0, 1)
+
 
     distPerSec := (2 * math.Pi) / 16
     var time, loopStart, secondsPerFrame float64
@@ -521,19 +567,10 @@ func main() {
         loopStart = glfw.GetTime()
 
         // animating
-        {
-            ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
-            models := (*[4]mgl.Mat4)(ptr)[:]
-            pos := positions[0]
-            models[0] = mgl.Translate3D(pos.X(), pos.Y(), pos.Z())
-            for i, pDir := range pDirs {
-                rotate := mgl.HomogRotate3D(float32(time * distPerSec), pDir)
-                pos = positions[i + 1]
-                translate := mgl.Translate3D(pos.X(), pos.Y(), pos.Z())
-                models[i + 1] = rotate.Mul4(translate)
-            }
-            gl.UnmapNamedBuffer(imbo)
-        }
+        gl.ProgramUniform1f(computeProgram, cpDistLoc, float32(secondsPerFrame * distPerSec))
+        gl.UseProgram(computeProgram)
+        gl.DispatchCompute(256, 1, 1)
+        gl.UseProgram(0)
 
         // input handling
         if directions.startLeft {
@@ -732,7 +769,7 @@ func main() {
 
         gl.UseProgram(tessProgram)
         gl.BindVertexArray(sphereVao)
-        gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, 4)
+        gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
         gl.BindVertexArray(0)
         gl.UseProgram(0)
 
@@ -858,6 +895,41 @@ func newTessProgram(vs, tcs, tes, fs uint32) (uint32, error) {
     gl.DetachShader(program, tcs)
     gl.DetachShader(program, tes)
     gl.DetachShader(program, fs)
+
+    var validateStatus int32
+    gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
+
+    var linkStatus int32
+    gl.GetProgramiv(program, gl.LINK_STATUS, &linkStatus)
+
+    if validateStatus == gl.FALSE || linkStatus == gl.FALSE {
+        var infoLogLength int32
+        gl.GetProgramiv(program, gl.INFO_LOG_LENGTH, &infoLogLength)
+
+        infoLog := strings.Repeat("\x00", int(infoLogLength + 1))
+        gl.GetProgramInfoLog(program, infoLogLength, nil, gl.Str(infoLog))
+
+        gl.DeleteProgram(program)
+
+        return 0, fmt.Errorf(
+            "Failed to link program!\n#>> InfoLog:\n%s",
+            infoLog,
+        )
+    }
+
+    return program, nil
+}
+
+
+func newComputeProgram(cs uint32) (uint32, error) {
+    program := gl.CreateProgram()
+    if program == 0 {
+        return 0, fmt.Errorf("Could not create name for program!")
+    }
+
+    gl.AttachShader(program, cs)
+    gl.LinkProgram(program)
+    gl.DetachShader(program, cs)
 
     var validateStatus int32
     gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
