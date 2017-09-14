@@ -62,6 +62,10 @@ var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
 var animating bool
 
 
+var distPerSecFactor float64 = 16
+var distPerSec float64 = (2 * math.Pi) / distPerSecFactor
+
+
 func main() {
     if err := glfw.Init(); err != nil {
         log.Fatalln("Failed to initialize glfw:", err)
@@ -287,6 +291,28 @@ func main() {
                 switch action {
                 case glfw.Press:
                     animating = !animating
+                }
+            case glfw.KeyQ:
+                switch action {
+                case glfw.Press:
+                    if distPerSecFactor > 0.015625 {
+                        distPerSecFactor /= 2
+                        distPerSec = (2 * math.Pi) / distPerSecFactor
+                    }
+                }
+            case glfw.KeyE:
+                switch action {
+                case glfw.Press:
+                    if distPerSecFactor < 16384 {
+                        distPerSecFactor *= 2
+                        distPerSec = (2 * math.Pi) / distPerSecFactor
+                    }
+                }
+            case glfw.KeyF:
+                switch action {
+                case glfw.Press:
+                    distPerSecFactor = 16
+                    distPerSec = (2 * math.Pi) / distPerSecFactor
                 }
             }
         },
@@ -568,7 +594,6 @@ func main() {
     gl.ClearColor(0, 0, 0, 1)
 
 
-    distPerSec := (2 * math.Pi) / 16
     var time, loopStart, secondsPerFrame float64
     for !window.ShouldClose() {
         loopStart = glfw.GetTime()
