@@ -59,6 +59,8 @@ var scrollDirection float32
 
 var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
 
+var animating bool
+
 
 func main() {
     if err := glfw.Init(); err != nil {
@@ -280,6 +282,11 @@ func main() {
                     directions.startDown = true
                 case glfw.Release:
                     directions.stopDown = true
+                }
+            case glfw.KeyR:
+                switch action {
+                case glfw.Press:
+                    animating = !animating
                 }
             }
         },
@@ -567,10 +574,12 @@ func main() {
         loopStart = glfw.GetTime()
 
         // animating
-        gl.ProgramUniform1f(computeProgram, cpDistLoc, float32(secondsPerFrame * distPerSec))
-        gl.UseProgram(computeProgram)
-        gl.DispatchCompute(256, 1, 1)
-        gl.UseProgram(0)
+        if animating {
+            gl.ProgramUniform1f(computeProgram, cpDistLoc, float32(secondsPerFrame * distPerSec))
+            gl.UseProgram(computeProgram)
+            gl.DispatchCompute(256, 1, 1)
+            gl.UseProgram(0)
+        }
 
         // input handling
         if directions.startLeft {
