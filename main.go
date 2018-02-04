@@ -48,7 +48,7 @@ const (
 )
 
 const (
-    numSpheres = 256 * 256
+    numSpheres = 30000
 )
 
 
@@ -354,7 +354,12 @@ func main() {
 
 
     cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("distance\x00"))
-
+    cpNumSpheresLoc := gl.GetUniformLocation(computeProgram, gl.Str("numSpheres\x00"))
+    var numInvocations uint32 = numSpheres / 256
+    if numSpheres % 256  != 0 {
+        numInvocations += 1
+    }
+    gl.ProgramUniform1ui(computeProgram, cpNumSpheresLoc, numSpheres)
 
     var socVao uint32
     gl.CreateVertexArrays(1, &socVao)
@@ -602,7 +607,7 @@ func main() {
         if animating {
             gl.ProgramUniform1f(computeProgram, cpDistLoc, float32(secondsPerFrame * distPerSec))
             gl.UseProgram(computeProgram)
-            gl.DispatchCompute(256, 1, 1)
+            gl.DispatchCompute(numInvocations, 1, 1)
             gl.UseProgram(0)
         }
 

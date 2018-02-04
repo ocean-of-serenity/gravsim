@@ -5,6 +5,7 @@
 layout(local_size_x=256) in;
 
 uniform float distance;
+uniform uint numSpheres;
 
 layout(std430, binding=1) buffer Models {
     mat4 models[];
@@ -41,7 +42,7 @@ mat4 rotate(in float angle, in vec3 axis) {
 
 void main() {
     uint id = gl_GlobalInvocationID.x;
-    if( id != 0 ) {
+    if( id != 0 && id < numSpheres ) {
         vec4 position = vec4(models[id][3].xyz, 1);
         mat4 rotation = rotate(distance, axiis[id].xyz);
         vec4 new_position = rotation * position;
