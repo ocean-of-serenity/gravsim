@@ -11,6 +11,7 @@ import (
     "runtime"
     "strings"
     "math/rand"
+    "time"
 
     "github.com/go-gl/gl/v4.5-core/gl"
     "github.com/go-gl/glfw/v3.2/glfw"
@@ -508,11 +509,13 @@ func main() {
         var positions [numSpheres]mgl.Vec3
         positions[0] = mgl.Vec3{0, 0, 0}
         for i := 1; i < numSpheres; i++ {
-            positions[i] = mgl.Vec3{
-                rand.Float32() * 24 - 12,
-                rand.Float32() * 24 - 12,
-                rand.Float32() * 24 - 12,
-            }
+            direction := mgl.Vec3{
+                rand.Float32() - 0.5,
+                (rand.Float32() - 0.5) * 0.05,
+                rand.Float32() - 0.5,
+            }.Normalize()
+            scale := 0.5 + rand.Float32() * 11.5
+            positions[i] = direction.Mul(scale)
         }
 
         gl.CreateBuffers(1, &sphereImbo)
@@ -526,7 +529,7 @@ func main() {
                 x := positions[i].X()
                 y := positions[i].Y()
                 z := positions[i].Z()
-                models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(0.04, 0.04, 0.04))
+                models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(0.016, 0.016, 0.016))
             }
 
             gl.UnmapNamedBuffer(sphereImbo)
@@ -550,29 +553,12 @@ func main() {
         gl.CreateBuffers(1, &sphereIabo)
         gl.NamedBufferStorage(sphereIabo, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
-            perpDir := func(direction mgl.Vec3) mgl.Vec3 {
-                switch {
-                case direction.X() != 0:
-                    return mgl.Vec3{
-                        (-direction.Y() - direction.Z()) / direction.X(),
-                        1,
-                        1,
-                    }
-                case direction.Y() != 0:
-                    return mgl.Vec3{
-                        1,
-                        (-direction.X() - direction.Z()) / direction.Y(),
-                        1,
-                    }
-                case direction.Z() != 0:
-                    return mgl.Vec3{
-                        1,
-                        1,
-                        (-direction.X() - direction.Y()) / direction.Z(),
-                    }
-                default:
-                    return direction
+            calcAxis := func(direction mgl.Vec3) mgl.Vec3 {
+                axis := direction.Cross(direction.Cross(mgl.Vec3{0, 1, 0}))
+                if axis.Y() > 0 {
+                    axis = axis.Mul(-1)
                 }
+                return axis.Normalize()
             }
 
             ptr := gl.MapNamedBuffer(sphereIabo, gl.WRITE_ONLY)
@@ -580,7 +566,7 @@ func main() {
 
             axiis[0] = mgl.Vec4{0, 0, 0, 1}
             for i := 1; i < numSpheres; i++ {
-                axiis[i] = perpDir(positions[i]).Vec4(1)
+                axiis[i] = calcAxis(positions[i]).Vec4(1)
             }
 
             gl.UnmapNamedBuffer(sphereIabo)
@@ -599,7 +585,7 @@ func main() {
     gl.ClearColor(0, 0, 0, 1)
 
 
-    var time, loopStart, secondsPerFrame float64
+    var loopStart, secondsPerFrame float64
     for !window.ShouldClose() {
         loopStart = glfw.GetTime()
 
@@ -818,13 +804,13 @@ func main() {
         glfw.PollEvents()
 
         secondsPerFrame = glfw.GetTime() - loopStart
-        time += secondsPerFrame
     }
 }
 
 
 func init() {
     runtime.LockOSThread()
+    rand.Seed(time.Now().UnixNano())
 }
 
 
