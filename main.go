@@ -68,8 +68,7 @@ var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
 var animating bool
 
 
-var distPerSecFactor float64 = 16
-var distPerSec float64 = (2 * math.Pi) / distPerSecFactor
+var speedMultiplier float32 = 1
 
 
 func main() {
@@ -244,24 +243,21 @@ func main() {
             case glfw.KeyQ:
                 switch action {
                 case glfw.Press:
-                    if distPerSecFactor > 0.015625 {
-                        distPerSecFactor /= 2
-                        distPerSec = (2 * math.Pi) / distPerSecFactor
+                    if speedMultiplier < 64 {
+                        speedMultiplier *= 2
                     }
                 }
             case glfw.KeyE:
                 switch action {
                 case glfw.Press:
-                    if distPerSecFactor < 16384 {
-                        distPerSecFactor *= 2
-                        distPerSec = (2 * math.Pi) / distPerSecFactor
+                    if speedMultiplier > 0.015625 {
+                        speedMultiplier /= 2
                     }
                 }
             case glfw.KeyF:
                 switch action {
                 case glfw.Press:
-                    distPerSecFactor = 16
-                    distPerSec = (2 * math.Pi) / distPerSecFactor
+                    speedMultiplier = 1
                 }
             }
         },
@@ -294,7 +290,7 @@ func main() {
     gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
 
 
-    cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("aAngle\x00"))
+    cpSpeedMultLoc := gl.GetUniformLocation(computeProgram, gl.Str("speedMultiplier\x00"))
     cpNumSpheresLoc := gl.GetUniformLocation(computeProgram, gl.Str("numSpheres\x00"))
     var numInvocations uint32 = numSpheres / 256
     if numSpheres % 256  != 0 {
@@ -369,7 +365,7 @@ func main() {
         }
     }
 
-    var sphereVao, sphereImbo, sphereIabo, sphereIsbo uint32
+    var sphereVao uint32
     gl.CreateVertexArrays(1, &sphereVao)
     {
         var vbo uint32
@@ -459,6 +455,7 @@ func main() {
             positions[i] = direction.Mul(scale)
         }
 
+        var sphereImbo uint32
         gl.CreateBuffers(1, &sphereImbo)
         gl.NamedBufferStorage(sphereImbo, numSpheres * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
@@ -484,6 +481,30 @@ func main() {
             gl.VertexArrayAttribFormat(sphereVao, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
         }
 
+        gl.ShaderStorageBlockBinding(computeProgram, 1, 1)
+        gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, sphereImbo)
+
+
+        var sphereIsbo uint32
+        gl.CreateBuffers(1, &sphereIsbo)
+        gl.NamedBufferStorage(sphereIsbo, numSpheres * 4, nil, gl.MAP_WRITE_BIT)
+        {
+            ptr := gl.MapNamedBuffer(sphereIsbo, gl.WRITE_ONLY)
+            speeds := (*[numSpheres]float32)(ptr)[:]
+
+            speeds[0] = 0
+            for i := 1; i < numSpheres; i++ {
+                speeds[i] = (0.02 / positions[i].Len()) * (0.7 + rand.Float32() * 0.6)
+            }
+
+            gl.UnmapNamedBuffer(sphereIsbo)
+        }
+
+        gl.ShaderStorageBlockBinding(computeProgram, 2, 2)
+        gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, sphereIsbo)
+
+
+        var sphereIabo uint32
         gl.CreateBuffers(1, &sphereIabo)
         gl.NamedBufferStorage(sphereIabo, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
@@ -502,35 +523,9 @@ func main() {
             gl.UnmapNamedBuffer(sphereIabo)
         }
 
-        printFuckingError()
-        gl.CreateBuffers(1, &sphereIsbo)
-        printFuckingError()
-        gl.NamedBufferStorage(sphereIsbo, numSpheres * 4, nil, gl.MAP_WRITE_BIT)
-        printFuckingError()
-        {
-            ptr := gl.MapNamedBuffer(sphereIsbo, gl.WRITE_ONLY)
-            printFuckingError()
-            speeds := (*[numSpheres]float32)(ptr)[:]
-
-            speeds[0] = 0
-            for i := 1; i < numSpheres; i++ {
-                speeds[i] = float32(0.0005) // positions[i].Len()
-            }
-
-            gl.UnmapNamedBuffer(sphereIsbo)
-            printFuckingError()
-        }
-        printFuckingError()
+        gl.ShaderStorageBlockBinding(computeProgram, 3, 3)
+        gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, sphereIabo)
     }
-
-    gl.ShaderStorageBlockBinding(computeProgram, 1, 1)
-    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, sphereImbo)
-
-    gl.ShaderStorageBlockBinding(computeProgram, 2, 2)
-    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, sphereIabo)
-
-    gl.ShaderStorageBlockBinding(computeProgram, 3, 3)
-    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, sphereIsbo)
 
 
     //gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
@@ -546,7 +541,7 @@ func main() {
 
         // animating
         if animating {
-            gl.ProgramUniform1f(computeProgram, cpDistLoc, float32(secondsPerFrame * distPerSec))
+            gl.ProgramUniform1f(computeProgram, cpSpeedMultLoc, speedMultiplier)
             gl.UseProgram(computeProgram)
             gl.DispatchCompute(numInvocations, 1, 1)
             gl.UseProgram(0)
@@ -732,6 +727,7 @@ func newGeneralProgram(vs, fs uint32) (uint32, error) {
     gl.LinkProgram(program)
     gl.DetachShader(program, vs)
     gl.DetachShader(program, fs)
+    gl.ValidateProgram(program)
 
     var validateStatus int32
     gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
@@ -773,6 +769,7 @@ func newTessProgram(vs, tcs, tes, fs uint32) (uint32, error) {
     gl.DetachShader(program, tcs)
     gl.DetachShader(program, tes)
     gl.DetachShader(program, fs)
+    gl.ValidateProgram(program)
 
     var validateStatus int32
     gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
@@ -808,6 +805,7 @@ func newComputeProgram(cs uint32) (uint32, error) {
     gl.AttachShader(program, cs)
     gl.LinkProgram(program)
     gl.DetachShader(program, cs)
+    gl.ValidateProgram(program)
 
     var validateStatus int32
     gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
@@ -831,31 +829,6 @@ func newComputeProgram(cs uint32) (uint32, error) {
     }
 
     return program, nil
-}
-
-
-func printFuckingError() {
-    err := gl.GetError()
-    switch err {
-    case gl.NO_ERROR:
-        fmt.Println("fuck: no error")
-    case gl.INVALID_ENUM:
-        fmt.Println("fuck: invalid enum")
-    case gl.INVALID_VALUE:
-        fmt.Println("fuck: invalid value")
-    case gl.INVALID_OPERATION:
-        fmt.Println("fuck: invalid operation")
-    case gl.INVALID_FRAMEBUFFER_OPERATION:
-        fmt.Println("fuck: invalid framebuffer operation")
-    case gl.OUT_OF_MEMORY:
-        fmt.Println("fuck: out of memory")
-    case gl.STACK_UNDERFLOW:
-        fmt.Println("fuck: stack underflow")
-    case gl.STACK_OVERFLOW:
-        fmt.Println("fuck: stack overflow")
-    default:
-        fmt.Println("idk what the fuck's happening anymore")
-    }
 }
 
 
