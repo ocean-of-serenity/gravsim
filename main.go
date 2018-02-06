@@ -77,25 +77,14 @@ func main() {
     glfw.WindowHint(glfw.ContextVersionMinor, 5)
     glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 
-    window, err := glfw.CreateWindow(
-        initWindowWidth,
-        initWindowHeight,
-        "OpenGL Test",
-        nil,
-        nil,
-    )
+    window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
     if err != nil {
         log.Fatalln("Failed to create window", err)
     }
     defer window.Destroy()
 
     window.MakeContextCurrent()
-    window.SetSizeLimits(
-        minWindowWidth,
-        minWindowHeight,
-        glfw.DontCare,
-        glfw.DontCare,
-    )
+    window.SetSizeLimits(minWindowWidth, minWindowHeight, glfw.DontCare, glfw.DontCare)
 
     if err := gl.Init(); err != nil {
         log.Fatalln("Failed to initialize glow", err)
@@ -187,20 +176,8 @@ func main() {
     )
     tpProjLoc := gl.GetUniformLocation(tessProgram, gl.Str("projection\x00"))
     gpProjLoc := gl.GetUniformLocation(generalProgram, gl.Str("projection\x00"))
-    gl.ProgramUniformMatrix4fv(
-        tessProgram,
-        tpProjLoc,
-        1,
-        false,
-        &projection[0],
-    )
-    gl.ProgramUniformMatrix4fv(
-        generalProgram,
-        gpProjLoc,
-        1,
-        false,
-        &projection[0],
-    )
+    gl.ProgramUniformMatrix4fv(tessProgram, tpProjLoc, 1, false, &projection[0])
+    gl.ProgramUniformMatrix4fv(generalProgram, gpProjLoc, 1, false, &projection[0])
 
     resizeWindow := func(_ *glfw.Window, width, height int) {
         gl.Viewport(0, 0, int32(width), int32(height))
@@ -212,53 +189,19 @@ func main() {
             40,
         )
 
-        gl.ProgramUniformMatrix4fv(
-            tessProgram,
-            tpProjLoc,
-            1,
-            false,
-            &projection[0],
-        )
-        gl.ProgramUniformMatrix4fv(
-            generalProgram,
-            gpProjLoc,
-            1,
-            false,
-            &projection[0],
-        )
+        gl.ProgramUniformMatrix4fv(tessProgram, tpProjLoc, 1, false, &projection[0])
+        gl.ProgramUniformMatrix4fv(generalProgram, gpProjLoc, 1, false, &projection[0])
     }
     window.SetFramebufferSizeCallback(resizeWindow)
 
-    view := mgl.LookAtV(
-        camera.root,
-        camera.watch,
-        mgl.Vec3{0, 1, 0},
-    )
+    view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
     tpViewLoc := gl.GetUniformLocation(tessProgram, gl.Str("view\x00"))
     gpViewLoc := gl.GetUniformLocation(generalProgram, gl.Str("view\x00"))
-    gl.ProgramUniformMatrix4fv(
-        tessProgram,
-        tpViewLoc,
-        1,
-        false,
-        &view[0],
-    )
-    gl.ProgramUniformMatrix4fv(
-        generalProgram,
-        gpViewLoc,
-        1,
-        false,
-        &view[0],
-    )
+    gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+    gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
 
     window.SetKeyCallback(
-        func(
-            _ *glfw.Window,
-            key glfw.Key,
-            _ int,
-            action glfw.Action,
-            _ glfw.ModifierKey,
-        ) {
+        func(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, _ glfw.ModifierKey) {
             switch key {
             case glfw.KeyA:
                 switch action {
@@ -342,16 +285,8 @@ func main() {
     tpAmbLoc := gl.GetUniformLocation(tessProgram, gl.Str("ambient_part\x00"))
     gl.ProgramUniform1f(tessProgram, tpAmbLoc, 0.4)
 
-    tpCamLoc := gl.GetUniformLocation(
-        tessProgram,
-        gl.Str("camera_location\x00"),
-    )
-    gl.ProgramUniform3fv(
-        tessProgram,
-        tpCamLoc,
-        1,
-        &camera.root[0],
-    )
+    tpCamLoc := gl.GetUniformLocation(tessProgram, gl.Str("camera_location\x00"))
+    gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
 
 
     cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("distance\x00"))
@@ -361,6 +296,7 @@ func main() {
         numInvocations += 1
     }
     gl.ProgramUniform1ui(computeProgram, cpNumSpheresLoc, numSpheres)
+
 
     var socVao uint32
     gl.CreateVertexArrays(1, &socVao)
@@ -540,33 +476,22 @@ func main() {
         for i := uint32(0); i < 4; i++ {
             gl.EnableVertexArrayAttrib(sphereVao, 2 + i)
             gl.VertexArrayAttribBinding(sphereVao, 2 + i, 2)
-            gl.VertexArrayAttribFormat(
-                sphereVao,
-                2 + i,
-                4,
-                gl.FLOAT,
-                false,
-                4 * 4 * i,
-            )
+            gl.VertexArrayAttribFormat(sphereVao, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
         }
 
         gl.CreateBuffers(1, &sphereIabo)
         gl.NamedBufferStorage(sphereIabo, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
         {
-            calcAxis := func(direction mgl.Vec3) mgl.Vec3 {
-                axis := direction.Cross(direction.Cross(mgl.Vec3{0, 1, 0}))
-                if axis.Y() > 0 {
-                    axis = axis.Mul(-1)
-                }
-                return axis.Normalize()
-            }
-
             ptr := gl.MapNamedBuffer(sphereIabo, gl.WRITE_ONLY)
             axiis := (*[numSpheres]mgl.Vec4)(ptr)[:]
 
             axiis[0] = mgl.Vec4{0, 0, 0, 1}
             for i := 1; i < numSpheres; i++ {
-                axiis[i] = calcAxis(positions[i]).Vec4(1)
+                axis := positions[i].Cross(positions[i].Cross(mgl.Vec3{0, 1, 0}))
+                if axis.Y() > 0 {
+                    axis = axis.Mul(-1)
+                }
+                axiis[i] = axis.Normalize().Vec4(1)
             }
 
             gl.UnmapNamedBuffer(sphereIabo)
@@ -600,33 +525,12 @@ func main() {
         // input handling
         if directions.startLeft {
             if !directions.startRight {
-                rotate := mgl.HomogRotate3D(
-                    -float32(secondsPerFrame * RotationSpeed),
-                    mgl.Vec3{0, 1, 0},
-                )
+                rotate := mgl.HomogRotate3D(-float32(secondsPerFrame * RotationSpeed), mgl.Vec3{0, 1, 0})
                 camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
                 view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(
-                    tessProgram,
-                    tpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-                gl.ProgramUniformMatrix4fv(
-                    generalProgram,
-                    gpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-
-                gl.ProgramUniform3fv(
-                    tessProgram,
-                    tpCamLoc,
-                    1,
-                    &camera.root[0],
-                )
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
             }
 
             if directions.stopLeft {
@@ -637,33 +541,12 @@ func main() {
 
         if directions.startRight {
             if !directions.startLeft {
-                rotate := mgl.HomogRotate3D(
-                    float32(secondsPerFrame * RotationSpeed),
-                    mgl.Vec3{0, 1, 0},
-                )
+                rotate := mgl.HomogRotate3D(float32(secondsPerFrame * RotationSpeed), mgl.Vec3{0, 1, 0})
                 camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
                 view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(
-                    tessProgram,
-                    tpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-                gl.ProgramUniformMatrix4fv(
-                    generalProgram,
-                    gpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-
-                gl.ProgramUniform3fv(
-                    tessProgram,
-                    tpCamLoc,
-                    1,
-                    &camera.root[0],
-                )
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
             }
 
             if directions.stopRight {
@@ -676,33 +559,12 @@ func main() {
             upDot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
             if !directions.startDown && upDot < 0.99 {
                 axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-                rotate := mgl.HomogRotate3D(
-                    -float32(secondsPerFrame * RotationSpeed),
-                    axis,
-                )
+                rotate := mgl.HomogRotate3D(-float32(secondsPerFrame * RotationSpeed), axis)
                 camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
                 view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(
-                    tessProgram,
-                    tpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-                gl.ProgramUniformMatrix4fv(
-                    generalProgram,
-                    gpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-
-                gl.ProgramUniform3fv(
-                    tessProgram,
-                    tpCamLoc,
-                    1,
-                    &camera.root[0],
-                )
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
             }
 
             if directions.stopUp {
@@ -715,33 +577,12 @@ func main() {
             downDot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
             if !directions.startUp && downDot < 0.99 {
                 axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-                rotate := mgl.HomogRotate3D(
-                    float32(secondsPerFrame * RotationSpeed),
-                    axis,
-                )
+                rotate := mgl.HomogRotate3D(float32(secondsPerFrame * RotationSpeed), axis)
                 camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
                 view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(
-                    tessProgram,
-                    tpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-                gl.ProgramUniformMatrix4fv(
-                    generalProgram,
-                    gpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-
-                gl.ProgramUniform3fv(
-                    tessProgram,
-                    tpCamLoc,
-                    1,
-                    &camera.root[0],
-                )
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
             }
 
             if directions.stopDown {
@@ -757,27 +598,9 @@ func main() {
             if newRootLength > 1 && newRootLength < 30 {
                 camera.root = newRoot
                 view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(
-                    tessProgram,
-                    tpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-                gl.ProgramUniformMatrix4fv(
-                    generalProgram,
-                    gpViewLoc,
-                    1,
-                    false,
-                    &view[0],
-                )
-
-                gl.ProgramUniform3fv(
-                    tessProgram,
-                    tpCamLoc,
-                    1,
-                    &camera.root[0],
-                )
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
             }
 
             scrolling = false
