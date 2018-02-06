@@ -36,6 +36,11 @@ type Camera struct {
     root, watch mgl.Vec3
 }
 
+type Rotation struct {
+    axis mgl.Vec4
+    distance, circumference, speed, PADDING float32
+}
+
 
 const (
     initWindowWidth = 1280
@@ -289,7 +294,7 @@ func main() {
     gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
 
 
-    cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("distance\x00"))
+    cpDistLoc := gl.GetUniformLocation(computeProgram, gl.Str("aAngle\x00"))
     cpNumSpheresLoc := gl.GetUniformLocation(computeProgram, gl.Str("numSpheres\x00"))
     var numInvocations uint32 = numSpheres / 256
     if numSpheres % 256  != 0 {
@@ -364,7 +369,7 @@ func main() {
         }
     }
 
-    var sphereVao, sphereImbo, sphereIabo uint32
+    var sphereVao, sphereImbo, sphereIabo, sphereIsbo uint32
     gl.CreateVertexArrays(1, &sphereVao)
     {
         var vbo uint32
@@ -496,6 +501,26 @@ func main() {
 
             gl.UnmapNamedBuffer(sphereIabo)
         }
+
+        printFuckingError()
+        gl.CreateBuffers(1, &sphereIsbo)
+        printFuckingError()
+        gl.NamedBufferStorage(sphereIsbo, numSpheres * 4, nil, gl.MAP_WRITE_BIT)
+        printFuckingError()
+        {
+            ptr := gl.MapNamedBuffer(sphereIsbo, gl.WRITE_ONLY)
+            printFuckingError()
+            speeds := (*[numSpheres]float32)(ptr)[:]
+
+            speeds[0] = 0
+            for i := 1; i < numSpheres; i++ {
+                speeds[i] = float32(0.0005) // positions[i].Len()
+            }
+
+            gl.UnmapNamedBuffer(sphereIsbo)
+            printFuckingError()
+        }
+        printFuckingError()
     }
 
     gl.ShaderStorageBlockBinding(computeProgram, 1, 1)
@@ -504,6 +529,11 @@ func main() {
     gl.ShaderStorageBlockBinding(computeProgram, 2, 2)
     gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, sphereIabo)
 
+    gl.ShaderStorageBlockBinding(computeProgram, 3, 3)
+    gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, sphereIsbo)
+
+
+    //gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 
     gl.Enable(gl.DEPTH_TEST)
 
@@ -801,6 +831,31 @@ func newComputeProgram(cs uint32) (uint32, error) {
     }
 
     return program, nil
+}
+
+
+func printFuckingError() {
+    err := gl.GetError()
+    switch err {
+    case gl.NO_ERROR:
+        fmt.Println("fuck: no error")
+    case gl.INVALID_ENUM:
+        fmt.Println("fuck: invalid enum")
+    case gl.INVALID_VALUE:
+        fmt.Println("fuck: invalid value")
+    case gl.INVALID_OPERATION:
+        fmt.Println("fuck: invalid operation")
+    case gl.INVALID_FRAMEBUFFER_OPERATION:
+        fmt.Println("fuck: invalid framebuffer operation")
+    case gl.OUT_OF_MEMORY:
+        fmt.Println("fuck: out of memory")
+    case gl.STACK_UNDERFLOW:
+        fmt.Println("fuck: stack underflow")
+    case gl.STACK_OVERFLOW:
+        fmt.Println("fuck: stack overflow")
+    default:
+        fmt.Println("idk what the fuck's happening anymore")
+    }
 }
 
 

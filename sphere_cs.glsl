@@ -4,7 +4,7 @@
 
 layout(local_size_x=256) in;
 
-uniform float distance;
+uniform float aAngle;
 uniform uint numSpheres;
 
 layout(std430, binding=1) buffer Models {
@@ -13,6 +13,10 @@ layout(std430, binding=1) buffer Models {
 
 layout(std430, binding=2) buffer Axiis {
     vec4 axiis[];
+};
+
+layout(std430, binding=3) buffer Speeds {
+    float speeds[];
 };
 
 
@@ -44,9 +48,9 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if( id != 0 && id < numSpheres ) {
         vec4 position = vec4(models[id][3].xyz, 1);
-        mat4 rotation = rotate(distance, axiis[id].xyz);
-        vec4 new_position = rotation * position;
-        models[id][3].xyz = new_position.xyz;
+        mat4 rotation = rotate(speeds[id], axiis[id].xyz);
+        vec4 newPosition = rotation * position;
+        models[id][3].xyz = newPosition.xyz;
     }
 }
 
