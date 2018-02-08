@@ -27,18 +27,8 @@ type Light struct {
     pos, color mgl.Vec4
 }
 
-type Directions struct {
-    startLeft, startRight, startUp, startDown bool
-    stopLeft, stopRight, stopUp, stopDown bool
-}
-
 type Camera struct {
     root, watch mgl.Vec3
-}
-
-type Rotation struct {
-    axis mgl.Vec4
-    distance, circumference, speed, PADDING float32
 }
 
 
@@ -50,7 +40,9 @@ const (
 )
 
 const (
-    RotationSpeed = (2 * math.Pi) / 8
+    framesPerSecond = 60.0
+    secondsPerFrame = 1 / framesPerSecond
+    rotationSpeed = ((2 * math.Pi) / 8) * secondsPerFrame
 )
 
 const (
@@ -58,16 +50,16 @@ const (
 )
 
 
-var directions Directions
+var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
+
+var leftKeyPressed, rightKeyPressed, upKeyPressed, downKeyPressed bool
+var leftKeyOn, rightKeyOn, upKeyOn, downKeyOn bool
+var moveLeft, moveRight, moveUp, moveDown bool
 
 var scrolling bool
 var scrollDirection float32
 
-var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
-
 var animating bool
-
-
 var speedMultiplier float32 = 1
 
 
@@ -210,30 +202,34 @@ func main() {
             case glfw.KeyA:
                 switch action {
                 case glfw.Press:
-                    directions.startLeft = true
+                    leftKeyPressed = true
+                    leftKeyOn = true
                 case glfw.Release:
-                    directions.stopLeft = true
+                    leftKeyOn = false
                 }
             case glfw.KeyD:
                 switch action {
                 case glfw.Press:
-                    directions.startRight = true
+                    rightKeyPressed = true
+                    rightKeyOn = true
                 case glfw.Release:
-                    directions.stopRight = true
+                    rightKeyOn = false
                 }
             case glfw.KeyW:
                 switch action {
                 case glfw.Press:
-                    directions.startUp = true
+                    upKeyPressed = true
+                    upKeyOn = true
                 case glfw.Release:
-                    directions.stopUp = true
+                    upKeyOn = false
                 }
             case glfw.KeyS:
                 switch action {
                 case glfw.Press:
-                    directions.startDown = true
+                    downKeyPressed = true
+                    downKeyOn = true
                 case glfw.Release:
-                    directions.stopDown = true
+                    downKeyOn = false
                 }
             case glfw.KeyR:
                 switch action {
@@ -264,7 +260,7 @@ func main() {
     )
 
     window.SetScrollCallback(func(_ *glfw.Window, xOffset, yOffset float64) {
-        scrollDirection = float32(yOffset)
+        scrollDirection -= float32(yOffset)
         scrolling = true
     })
 
@@ -535,123 +531,126 @@ func main() {
     gl.ClearColor(0, 0, 0, 1)
 
 
-    var loopStart, secondsPerFrame float64
+    var timeSinceLastRender float64 = 1
+    var loopTimeStart float64 = glfw.GetTime()
+    var loopTimeElapsed float64
     for !window.ShouldClose() {
-        loopStart = glfw.GetTime()
+        // time measurements
+        loopTimeElapsed = glfw.GetTime() - loopTimeStart
+        timeSinceLastRender += loopTimeElapsed
+        loopTimeStart = glfw.GetTime()
 
-        // animating
-        if animating {
-            gl.ProgramUniform1f(computeProgram, cpSpeedMultLoc, speedMultiplier)
-            gl.UseProgram(computeProgram)
-            gl.DispatchCompute(numInvocations, 1, 1)
-            gl.UseProgram(0)
-        }
-
-        // input handling
-        if directions.startLeft {
-            if !directions.startRight {
-                rotate := mgl.HomogRotate3D(-float32(secondsPerFrame * RotationSpeed), mgl.Vec3{0, 1, 0})
-                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
-                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
-                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
-            }
-
-            if directions.stopLeft {
-                directions.startLeft = false
-                directions.stopLeft = false
-            }
-        }
-
-        if directions.startRight {
-            if !directions.startLeft {
-                rotate := mgl.HomogRotate3D(float32(secondsPerFrame * RotationSpeed), mgl.Vec3{0, 1, 0})
-                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
-                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
-                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
-            }
-
-            if directions.stopRight {
-                directions.startRight = false
-                directions.stopRight = false
-            }
-        }
-
-        if directions.startUp {
-            upDot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
-            if !directions.startDown && upDot < 0.99 {
-                axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-                rotate := mgl.HomogRotate3D(-float32(secondsPerFrame * RotationSpeed), axis)
-                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
-                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
-                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
-            }
-
-            if directions.stopUp {
-                directions.startUp = false
-                directions.stopUp = false
-            }
-        }
-
-        if directions.startDown {
-            downDot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
-            if !directions.startUp && downDot < 0.99 {
-                axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-                rotate := mgl.HomogRotate3D(float32(secondsPerFrame * RotationSpeed), axis)
-                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
-                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
-                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
-            }
-
-            if directions.stopDown {
-                directions.startDown = false
-                directions.stopDown = false
-            }
-        }
-
-        if scrolling {
-            scroll := camera.root.Normalize().Mul(-scrollDirection / 3)
-            newRoot := camera.root.Add(scroll)
-            newRootLength := newRoot.Len()
-            if newRootLength > 1 && newRootLength < 30 {
-                camera.root = newRoot
-                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
-                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
-                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
-            }
-
-            scrolling = false
-        }
-
-        // rendering
-        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-        gl.UseProgram(generalProgram)
-        gl.BindVertexArray(socVao)
-        gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
-        gl.BindVertexArray(0)
-        gl.UseProgram(0)
-
-        gl.UseProgram(tessProgram)
-        gl.BindVertexArray(sphereVao)
-        gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
-        gl.BindVertexArray(0)
-        gl.UseProgram(0)
-
-        window.SwapBuffers()
 
         // event handling
         glfw.PollEvents()
 
-        secondsPerFrame = glfw.GetTime() - loopStart
+
+        if timeSinceLastRender > secondsPerFrame {
+            // animating
+            if animating {
+                gl.ProgramUniform1f(computeProgram, cpSpeedMultLoc, speedMultiplier)
+                gl.UseProgram(computeProgram)
+                gl.DispatchCompute(numInvocations, 1, 1)
+                gl.UseProgram(0)
+            }
+
+
+            // input handling
+            if (leftKeyPressed || leftKeyOn) && !(rightKeyPressed || rightKeyOn) {
+                moveLeft = true
+            } else if (rightKeyPressed || rightKeyOn) && !(leftKeyPressed || leftKeyOn) {
+                moveRight = true
+            }
+
+            leftKeyPressed, rightKeyPressed = false, false
+
+            if (upKeyPressed || upKeyOn) && !(downKeyPressed || downKeyOn) {
+                dot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
+                if dot < 0.99 {
+                    moveUp = true
+                }
+            } else if (downKeyPressed || downKeyOn) && !(upKeyPressed || upKeyOn) {
+                dot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
+                if dot < 0.99 {
+                    moveDown = true
+                }
+            }
+
+            upKeyPressed, downKeyPressed = false, false
+
+            if moveLeft {
+                rotate := mgl.HomogRotate3D(-float32(rotationSpeed), mgl.Vec3{0, 1, 0})
+                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
+            } else if moveRight {
+                rotate := mgl.HomogRotate3D(float32(rotationSpeed), mgl.Vec3{0, 1, 0})
+                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
+            }
+
+            moveLeft, moveRight = false, false
+
+            if moveUp {
+                axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+                rotate := mgl.HomogRotate3D(-float32(rotationSpeed), axis)
+                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
+            } else if moveDown {
+                axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+                rotate := mgl.HomogRotate3D(float32(rotationSpeed), axis)
+                camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+                view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
+            }
+
+            moveUp, moveDown = false, false
+
+            if scrolling {
+                scroll := camera.root.Normalize().Mul(scrollDirection / 3)
+                newRoot := camera.root.Add(scroll)
+                newRootLength := newRoot.Len()
+                if newRootLength > 1 && newRootLength < 30 {
+                    camera.root = newRoot
+                    view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+                    gl.ProgramUniformMatrix4fv(tessProgram, tpViewLoc, 1, false, &view[0])
+                    gl.ProgramUniformMatrix4fv(generalProgram, gpViewLoc, 1, false, &view[0])
+                    gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
+                }
+
+            }
+
+            scrollDirection = 0
+            scrolling = false
+
+
+            // rendering
+            gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+            gl.UseProgram(generalProgram)
+            gl.BindVertexArray(socVao)
+            gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
+            gl.BindVertexArray(0)
+            gl.UseProgram(0)
+
+            gl.UseProgram(tessProgram)
+            gl.BindVertexArray(sphereVao)
+            gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
+            gl.BindVertexArray(0)
+            gl.UseProgram(0)
+
+            window.SwapBuffers()
+        }
     }
 }
 
