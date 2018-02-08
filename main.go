@@ -531,6 +531,8 @@ func main() {
     gl.ClearColor(0, 0, 0, 1)
 
 
+//    var frameCounter uint
+//    var timeSinceLastSecond float64
     var timeSinceLastRender float64 = 1
     var loopTimeStart float64 = glfw.GetTime()
     var loopTimeElapsed float64
@@ -538,6 +540,7 @@ func main() {
         // time measurements
         loopTimeElapsed = glfw.GetTime() - loopTimeStart
         timeSinceLastRender += loopTimeElapsed
+//        timeSinceLastSecond += loopTimeElapsed
         loopTimeStart = glfw.GetTime()
 
 
@@ -546,6 +549,16 @@ func main() {
 
 
         if timeSinceLastRender > secondsPerFrame {
+            timeSinceLastRender = 0
+
+//            frameCounter += 1
+//
+//            if timeSinceLastSecond > 1 {
+//                timeSinceLastSecond = 0
+//                fmt.Println("FPS:", frameCounter)
+//                frameCounter = 0
+//            }
+
             // animating
             if animating {
                 gl.ProgramUniform1f(computeProgram, cpSpeedMultLoc, speedMultiplier)
