@@ -279,9 +279,6 @@ func main() {
     gl.UniformBlockBinding(tessProgram, 1, 1)
     gl.BindBufferBase(gl.UNIFORM_BUFFER, 1, lightUbo)
 
-    tpAmbLoc := gl.GetUniformLocation(tessProgram, gl.Str("ambient_part\x00"))
-    gl.ProgramUniform1f(tessProgram, tpAmbLoc, 0.4)
-
     tpCamLoc := gl.GetUniformLocation(tessProgram, gl.Str("camera_location\x00"))
     gl.ProgramUniform3fv(tessProgram, tpCamLoc, 1, &camera.root[0])
 
@@ -524,7 +521,7 @@ func main() {
     }
 
 
-    //gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
+//    gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 
     gl.Enable(gl.DEPTH_TEST)
 
