@@ -12,6 +12,7 @@ import (
     "strings"
     "math/rand"
     "time"
+	"unsafe"
 
     "github.com/go-gl/gl/v4.5-core/gl"
     "github.com/go-gl/glfw/v3.2/glfw"
@@ -72,6 +73,7 @@ func main() {
     glfw.WindowHint(glfw.ContextVersionMajor, 4)
     glfw.WindowHint(glfw.ContextVersionMinor, 5)
     glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
+	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
     window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
     if err != nil {
@@ -85,6 +87,20 @@ func main() {
     if err := gl.Init(); err != nil {
         log.Fatalln("Failed to initialize glow", err)
     }
+
+	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+	gl.DebugMessageCallback(
+		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
+			log.Println(
+				debugSeverityString(severity),
+				debugSourceString(source),
+				debugTypeString(gltype),
+				id,
+				message,
+			)
+		},
+		nil,
+	)
 
     log.Println("OpenGL version:", gl.GoStr(gl.GetString(gl.VERSION)))
 
@@ -838,6 +854,87 @@ func newComputeProgram(cs uint32) (uint32, error) {
     }
 
     return program, nil
+}
+
+
+func debugSourceString(source uint32) string {
+	switch source {
+	case gl.DEBUG_SOURCE_API:
+		return "API"
+
+	case gl.DEBUG_SOURCE_APPLICATION:
+		return "Application"
+
+	case gl.DEBUG_SOURCE_OTHER:
+		return "Other"
+
+	case gl.DEBUG_SOURCE_SHADER_COMPILER:
+		return "Shader Compiler"
+
+	case gl.DEBUG_SOURCE_THIRD_PARTY:
+		return "Third Party"
+
+	case gl.DEBUG_SOURCE_WINDOW_SYSTEM:
+		return "Window System"
+
+	default:
+		return "Unknown"
+	}
+}
+
+
+func debugTypeString(gltype uint32) string {
+	switch gltype {
+	case gl.DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+		return "Deprecated Behavior"
+
+	case gl.DEBUG_TYPE_ERROR:
+		return "Error"
+
+	case gl.DEBUG_TYPE_MARKER:
+		return "Marker"
+
+	case gl.DEBUG_TYPE_OTHER:
+		return "Other"
+
+	case gl.DEBUG_TYPE_PERFORMANCE:
+		return "Performance"
+
+	case gl.DEBUG_TYPE_POP_GROUP:
+		return "Pop Group"
+
+	case gl.DEBUG_TYPE_PORTABILITY:
+		return "Portability"
+
+	case gl.DEBUG_TYPE_PUSH_GROUP:
+		return "Push Group"
+
+	case gl.DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+		return "Undefined Behavior"
+
+	default:
+		return "Unknown"
+	}
+}
+
+
+func debugSeverityString(severity uint32) string {
+	switch severity {
+	case gl.DEBUG_SEVERITY_HIGH:
+		return "High"
+
+	case gl.DEBUG_SEVERITY_LOW:
+		return "Low"
+
+	case gl.DEBUG_SEVERITY_MEDIUM:
+		return "Medium"
+
+	case gl.DEBUG_SEVERITY_NOTIFICATION:
+		return "Notification"
+
+	default:
+		return "Unknown"
+	}
 }
 
 
