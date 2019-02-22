@@ -318,13 +318,15 @@ func main() {
 
 	var orbLocations [numSpheres]mgl.Vec3
 	var orbMasses [numSpheres]float32
+	var orbMassLocations [numSpheres]mgl.Vec3
 	var sumOrbMass float32
+	var sumOrbMassLocations mgl.Vec3
 	orbLocations[0] = mgl.Vec3{0, 0, 0}
-	orbMasses[0] = 27068510
+	orbMasses[0] = 1e10
+	orbMassLocations[0] = orbLocations[0].Mul(orbMasses[0])
 	sumOrbMass = orbMasses[0]
+	sumOrbMassLocations = orbMassLocations[0]
 	fmt.Println("loc:", orbLocations[0], "mass:", orbMasses[0])
-//	orbLocations[1] = mgl.Vec3{1119.117436, 0, 0}
-//	orbMasses[1] = 25853.99074
 	for i := 1; i < numSpheres; i++ {
 		direction := mgl.Vec3{
 			rand.Float32() - 0.5,
@@ -334,9 +336,13 @@ func main() {
 		scale := 1000.0 + rand.Float32() * 21000.0
 		orbLocations[i] = direction.Mul(scale)
 
-		orbMasses[i] = (float32(math.Pow10(rand.Intn(13))) * rand.Float32()) * 1e-7
+		orbMasses[i] = float32(math.Pow10(rand.Intn(7))) * rand.Float32()
+
+		orbMassLocations[i] = orbLocations[i].Mul(orbMasses[i])
 
 		sumOrbMass += orbMasses[i]
+
+		sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
 
 		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i])
 	}
@@ -344,27 +350,15 @@ func main() {
 
 	var orbVelocities [numSpheres]mgl.Vec3
 	orbVelocities[0] = mgl.Vec3{0, 0, 0}
-//	orbVelocities[1] = mgl.Vec3{0, 0, -6.76326e-2}
 	for i := 1; i < numSpheres; i++ {
-		// sum mass*location without current (index i) orb
-		sumML := mgl.Vec3{0, 0, 0}
-		for j := 0; j < numSpheres; j++ {
-			if j != i {
-				sumML = sumML.Add(orbLocations[j].Mul(orbMasses[j]))
-			}
-		}
-
-		// barycenter without current (index i) orb
-		bc := sumML.Mul(1 / (sumOrbMass - orbMasses[i]))
-
-		// displacement vector from barycenter to current orb
-		dv := orbLocations[i].Sub(bc)
+		// displacement vector from barycenter (without current orb) to current orb
+		dv := orbLocations[i].Sub(sumOrbMassLocations.Sub(orbMassLocations[i]).Mul(1 / (sumOrbMass - orbMasses[i])))
 
 		// velocity magnitude
 		mag := ((sumOrbMass - orbMasses[i]) / sumOrbMass) * float32(math.Sqrt(float64((G * sumOrbMass) / dv.Len())))
 
 		// velocity direction
-		dir := dv.Cross(mgl.Vec3{0, 1, 0}).Mul(1 / dv.Cross(mgl.Vec3{0, 1, 0}).Len())
+		dir := dv.Cross(mgl.Vec3{0, 1, 0}).Normalize()
 
 		// initial velocity
 		orbVelocities[i] = dir.Mul(mag)
