@@ -301,8 +301,7 @@ func main() {
 			gl.UnmapNamedBuffer(lightUB)
 		}
 	}
-	gl.UniformBlockBinding(sphereProgram, 1, 1)
-	gl.BindBufferBase(gl.UNIFORM_BUFFER, 1, lightUB)
+	gl.BindBufferBase(gl.UNIFORM_BUFFER, 0, lightUB)
 
 	sphereProgramCameraLocation := gl.GetUniformLocation(sphereProgram, gl.Str("camera_location\x00"))
 	gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
@@ -319,13 +318,13 @@ func main() {
 
 	var orbLocations [numSpheres]mgl.Vec3
 	var orbMasses [numSpheres]float32
-	var orbMassLocations [numSpheres]mgl.Vec3
 	var sumOrbMass float32
-	var sumOrbMassLocations mgl.Vec3
 	orbLocations[0] = mgl.Vec3{0, 0, 0}
-	orbMasses[0] = 2.8e7
+	orbMasses[0] = 27068510
 	sumOrbMass = orbMasses[0]
-	sumOrbMassLocations = orbLocations[0].Mul(orbMasses[0])
+	fmt.Println("loc:", orbLocations[0], "mass:", orbMasses[0])
+//	orbLocations[1] = mgl.Vec3{1119.117436, 0, 0}
+//	orbMasses[1] = 25853.99074
 	for i := 1; i < numSpheres; i++ {
 		direction := mgl.Vec3{
 			rand.Float32() - 0.5,
@@ -337,29 +336,35 @@ func main() {
 
 		orbMasses[i] = (float32(math.Pow10(rand.Intn(13))) * rand.Float32()) * 1e-7
 
-		orbMassLocations[i] = orbLocations[i].Mul(orbMasses[i])
-
 		sumOrbMass += orbMasses[i]
 
-		sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
-
-		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i], "massloc:", orbMassLocations[i])
+		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i])
 	}
-	fmt.Println("mass:", sumOrbMass, "massloc:", sumOrbMassLocations)
+	fmt.Println("mass:", sumOrbMass)
 
 	var orbVelocities [numSpheres]mgl.Vec3
-	for i := 0; i < numSpheres; i++ {
-		// barycenter without current orb
-		bc := sumOrbMassLocations.Sub(orbMassLocations[i]).Mul(1 / (sumOrbMass - orbMasses[i]))
+	orbVelocities[0] = mgl.Vec3{0, 0, 0}
+//	orbVelocities[1] = mgl.Vec3{0, 0, -6.76326e-2}
+	for i := 1; i < numSpheres; i++ {
+		// sum mass*location without current (index i) orb
+		sumML := mgl.Vec3{0, 0, 0}
+		for j := 0; j < numSpheres; j++ {
+			if j != i {
+				sumML = sumML.Add(orbLocations[j].Mul(orbMasses[j]))
+			}
+		}
 
-		// displacement vector from barycenter without current orb to current orb
+		// barycenter without current (index i) orb
+		bc := sumML.Mul(1 / (sumOrbMass - orbMasses[i]))
+
+		// displacement vector from barycenter to current orb
 		dv := orbLocations[i].Sub(bc)
 
-		// magnitude of initial velocity
+		// velocity magnitude
 		mag := ((sumOrbMass - orbMasses[i]) / sumOrbMass) * float32(math.Sqrt(float64((G * sumOrbMass) / dv.Len())))
 
-		// direction of initial velocity
-		dir := dv.Cross(mgl.Vec3{0, 1, 0}).Normalize()
+		// velocity direction
+		dir := dv.Cross(mgl.Vec3{0, 1, 0}).Mul(1 / dv.Cross(mgl.Vec3{0, 1, 0}).Len())
 
 		// initial velocity
 		orbVelocities[i] = dir.Mul(mag)
@@ -369,23 +374,6 @@ func main() {
 
 
 	{
-		var locationBuffer uint32
-		gl.CreateBuffers(1, &locationBuffer)
-		gl.NamedBufferStorage(locationBuffer, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
-		{
-			ptr := gl.MapNamedBuffer(locationBuffer, gl.WRITE_ONLY)
-			locations := (*[numSpheres]mgl.Vec4)(ptr)[:]
-
-			for i := 0; i < numSpheres; i++ {
-				locations[i] = orbLocations[i].Vec4(1)
-			}
-
-			gl.UnmapNamedBuffer(locationBuffer)
-		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 0, 0)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, locationBuffer)
-
-
 		var massBuffer uint32
 		gl.CreateBuffers(1, &massBuffer)
 		gl.NamedBufferStorage(massBuffer, numSpheres * 4, nil, gl.MAP_WRITE_BIT)
@@ -399,8 +387,7 @@ func main() {
 
 			gl.UnmapNamedBuffer(massBuffer)
 		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 1, 1)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, massBuffer)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, massBuffer)
 
 
 		var velocityBuffer uint32
@@ -416,8 +403,7 @@ func main() {
 
 			gl.UnmapNamedBuffer(velocityBuffer)
 		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 2, 2)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, velocityBuffer)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, velocityBuffer)
 	}
 
 	var axisVertexArray uint32
@@ -591,8 +577,7 @@ func main() {
 			gl.VertexArrayAttribFormat(sphereVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
 		}
 
-		gl.ShaderStorageBlockBinding(gravityProgram, 3, 3)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, instanceModelBuffer)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, instanceModelBuffer)
 	}
 
 

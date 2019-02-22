@@ -2,7 +2,7 @@
 #version 450 core
 
 
-layout(std140, binding=1) uniform Light {
+layout(std140, binding=0) uniform Light {
     vec3 position;
     vec3 color;
 } light;
