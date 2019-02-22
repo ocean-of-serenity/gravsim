@@ -24,18 +24,14 @@ void main() {
         color = in_.color;
     }
     else {
-
-        float light_distance = distance(light.position, in_.position) - 0.56;
-        float attenuation = 1.0 / (1.0 + light_distance * 0.02 + pow(light_distance, 2) * 0.01);
-
-        vec3 ambient = light.color * 0.4 * attenuation;
+        vec3 ambient = light.color * 0.4;
 
         vec3 light_direction = normalize(light.position - in_.position);
-        vec3 diffuse =  light.color * max(dot(in_.normal, light_direction), 0) * 0.9 * attenuation;
+        vec3 diffuse =  light.color * max(dot(in_.normal, light_direction), 0) * 0.9;
 
         vec3 view_direction = normalize(camera_location - in_.position);
         vec3 reflect_direction = reflect(-light_direction, in_.normal);
-        vec3 specular = light.color * pow(max(dot(view_direction, reflect_direction), 0), 16) * 1.3 * attenuation;
+        vec3 specular = light.color * pow(max(dot(view_direction, reflect_direction), 0), 16) * 1.3;
 
         color = vec4((ambient + diffuse) * in_.color.rgb + specular, in_.color.a);
     }

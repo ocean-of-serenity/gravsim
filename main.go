@@ -51,11 +51,11 @@ const (
 )
 
 const (
-	G = 6.67408e-11
+	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
 )
 
 
-var camera Camera = Camera{mgl.Vec3{3, 4, 10}, mgl.Vec3{0, 0, 0}}
+var camera Camera = Camera{mgl.Vec3{8000.0, 12000.0, 16000.0}, mgl.Vec3{0, 0, 0}}
 
 var leftKeyPressed, rightKeyPressed, upKeyPressed, downKeyPressed bool
 var leftKeyOn, rightKeyOn, upKeyOn, downKeyOn bool
@@ -192,8 +192,8 @@ func main() {
 	projection := mgl.Perspective(
 		math.Pi / 4,
 		float32(initWindowWidth) / float32(initWindowHeight),
-		0.1,
-		40,
+		32.0,
+		88000.0,
 	)
 	sphereProgramProjection := gl.GetUniformLocation(sphereProgram, gl.Str("projection\x00"))
 	axisProgramProjection := gl.GetUniformLocation(axisProgram, gl.Str("projection\x00"))
@@ -206,8 +206,8 @@ func main() {
 		projection = mgl.Perspective(
 			math.Pi / 4 * (float32(height) / float32(initWindowHeight)),
 			float32(width) / float32(height),
-			0.1,
-			40,
+			32.0,
+			88000.0,
 		)
 
 		gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramProjection, 1, false, &projection[0])
@@ -323,7 +323,7 @@ func main() {
 	var sumOrbMass float32
 	var sumOrbMassLocations mgl.Vec3
 	orbLocations[0] = mgl.Vec3{0, 0, 0}
-	orbMasses[0] = 1e30
+	orbMasses[0] = 2.8e7
 	sumOrbMass = orbMasses[0]
 	sumOrbMassLocations = orbLocations[0].Mul(orbMasses[0])
 	for i := 1; i < numSpheres; i++ {
@@ -332,20 +332,20 @@ func main() {
 			(rand.Float32() - 0.5) * 0.05,
 			rand.Float32() - 0.5,
 		}.Normalize()
-		scale := 5e7 + rand.Float32() * 1e9
+		scale := 1000.0 + rand.Float32() * 21000.0
 		orbLocations[i] = direction.Mul(scale)
 
-		// normally: orbMasses[i] = 1e16 + rand.Float32() * (1e27 - 1e16)
-		// but 1e27 is huge enough that the difference is numerically miniscule an can be ignored
-		// => (1e27 - 1e16) = 9.99999999e26
-		orbMasses[i] = 1e16 + rand.Float32() * 1e27
+		orbMasses[i] = (float32(math.Pow10(rand.Intn(13))) * rand.Float32()) * 1e-7
 
 		orbMassLocations[i] = orbLocations[i].Mul(orbMasses[i])
 
 		sumOrbMass += orbMasses[i]
 
 		sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
+
+		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i], "massloc:", orbMassLocations[i])
 	}
+	fmt.Println("mass:", sumOrbMass, "massloc:", sumOrbMassLocations)
 
 	var orbVelocities [numSpheres]mgl.Vec3
 	for i := 0; i < numSpheres; i++ {
@@ -363,6 +363,8 @@ func main() {
 
 		// initial velocity
 		orbVelocities[i] = dir.Mul(mag)
+
+		fmt.Println(orbVelocities[i])
 	}
 
 
@@ -380,8 +382,8 @@ func main() {
 
 			gl.UnmapNamedBuffer(locationBuffer)
 		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 1, 1)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, locationBuffer)
+		gl.ShaderStorageBlockBinding(gravityProgram, 0, 0)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, locationBuffer)
 
 
 		var massBuffer uint32
@@ -397,8 +399,8 @@ func main() {
 
 			gl.UnmapNamedBuffer(massBuffer)
 		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 2, 2)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, massBuffer)
+		gl.ShaderStorageBlockBinding(gravityProgram, 1, 1)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, massBuffer)
 
 
 		var velocityBuffer uint32
@@ -414,8 +416,8 @@ func main() {
 
 			gl.UnmapNamedBuffer(velocityBuffer)
 		}
-		gl.ShaderStorageBlockBinding(gravityProgram, 3, 3)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, velocityBuffer)
+		gl.ShaderStorageBlockBinding(gravityProgram, 2, 2)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, velocityBuffer)
 	}
 
 	var axisVertexArray uint32
@@ -465,7 +467,7 @@ func main() {
 		{
 			ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
 			models := (*[1]mgl.Mat4)(ptr)[:]
-			models[0] = mgl.Scale3D(12, 12, 12)
+			models[0] = mgl.Scale3D(22500.0, 22500.0, 22500.0)
 			gl.UnmapNamedBuffer(imbo)
 		}
 		gl.VertexArrayVertexBuffer(axisVertexArray, 2, imbo, 0, 4 * 4 * 4)
@@ -570,12 +572,12 @@ func main() {
 			ptr := gl.MapNamedBuffer(instanceModelBuffer, gl.WRITE_ONLY)
 			models := (*[numSpheres]mgl.Mat4)(ptr)[:]
 
-			models[0] = mgl.Translate3D(0, 0, 0).Mul4(mgl.Scale3D(0.4, 0.4, 0.4))
+			models[0] = mgl.Translate3D(0, 0, 0).Mul4(mgl.Scale3D(864.0, 864.0, 864.0))
 			for i := 1; i < numSpheres; i++ {
-				x := orbLocations[i].X() * 1.2e-8
-				y := orbLocations[i].Y() * 1.2e-8
-				z := orbLocations[i].Z() * 1.2e-8
-				models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(0.016, 0.016, 0.016))
+				x := orbLocations[i].X()
+				y := orbLocations[i].Y()
+				z := orbLocations[i].Z()
+				models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(28.0, 28.0, 28.0))
 			}
 
 			gl.UnmapNamedBuffer(instanceModelBuffer)
@@ -589,8 +591,8 @@ func main() {
 			gl.VertexArrayAttribFormat(sphereVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
 		}
 
-		gl.ShaderStorageBlockBinding(gravityProgram, 4, 4)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 4, instanceModelBuffer)
+		gl.ShaderStorageBlockBinding(gravityProgram, 3, 3)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, instanceModelBuffer)
 	}
 
 
@@ -701,10 +703,10 @@ func main() {
 			moveUp, moveDown = false, false
 
 			if scrolling {
-				scroll := camera.root.Normalize().Mul(scrollDirection / 3)
+				scroll := camera.root.Normalize().Mul(scrollDirection * 2096.0)
 				newRoot := camera.root.Add(scroll)
 				newRootLength := newRoot.Len()
-				if newRootLength > 1 && newRootLength < 30 {
+				if newRootLength > 1024.0 && newRootLength < 44000.0 {
 					camera.root = newRoot
 					view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
 					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
