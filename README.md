@@ -5,11 +5,7 @@ Gravity Simulation using Go and OpenGL 4.5 with GLOW and GLFW.
 
 
 Animation Hotkeys:
-- R - start animation
-- Q - double animation speed
-- E - halve animation speed
-- F - reset animation speed to default
-
+- R - start/stop animation
 
 Camera moves around the center
 
