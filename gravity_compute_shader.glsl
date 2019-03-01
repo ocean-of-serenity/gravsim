@@ -21,9 +21,10 @@ layout(std430, binding=2) buffer Models {
 };
 
 
-#define G 1.887130407e-7
-#define DELTA_T 1e2
-#define SOFTEN 1e1
+//#define G 1.887130407e-7
+#define G 1.142602313e-4
+#define DELTA_T 1
+#define SOFTEN 1
 
 
 void main() {

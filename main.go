@@ -51,7 +51,8 @@ const (
 )
 
 const (
-	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
+//	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
+	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
 )
 
 
@@ -322,7 +323,7 @@ func main() {
 	var sumOrbMass float32
 	var sumOrbMassLocations mgl.Vec3
 	orbLocations[0] = mgl.Vec3{0, 0, 0}
-	orbMasses[0] = 1e10
+	orbMasses[0] = 1e11
 	orbMassLocations[0] = orbLocations[0].Mul(orbMasses[0])
 	sumOrbMass = orbMasses[0]
 	sumOrbMassLocations = orbMassLocations[0]
