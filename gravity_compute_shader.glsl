@@ -2,22 +2,30 @@
 #version 450
 
 
-layout(local_size_x=256) in;
+layout(local_size_x=128) in;
 
 
-uniform float speedMultiplier;
-uniform uint numSpheres;
+uniform int active_buffers;
 
-layout(std430, binding=0) buffer Masses {
+
+layout(std430, binding=0) readonly buffer Masses {
 	float masses[];
 };
 
-layout(std430, binding=1) buffer Velocities {
-	vec4 velocities[];
+layout(std430, binding=1) buffer Velocities1 {
+	vec4 velocities1[];
 };
 
-layout(std430, binding=2) buffer Models {
-	mat4 models[];
+layout(std430, binding=2) buffer Locations1 {
+	vec4 locations1[];
+};
+
+layout(std430, binding=3) buffer Velocities2 {
+	vec4 velocities2[];
+};
+
+layout(std430, binding=4) buffer Locations2 {
+	vec4 locations2[];
 };
 
 
@@ -30,25 +38,29 @@ layout(std430, binding=2) buffer Models {
 void main() {
 	uint id = gl_GlobalInvocationID.x;
 
-	if( id < numSpheres ) {
+	if active_buffers == 1 {
 		vec3 sum = vec3(0, 0, 0);
 		for( int i = 0; i < numSpheres; i++ ) {
-			vec3 dv = models[i][3].xyz - models[id][3].xyz;
+			vec3 dv = locations1[id].xyz - locations1[id].xyz;
 			float brackets = dot(dv, dv) + SOFTEN * SOFTEN;
 			float divisor = sqrt(brackets * brackets * brackets);
 			sum += (masses[i] / divisor) * dv;
 		}
 		vec3 acceleration = sum * G;
-		vec3 location = models[id][3].xyz + velocities[id].xyz * DELTA_T + ((DELTA_T * DELTA_T) / 2) * acceleration;
-		vec3 velocity = velocities[id].xyz + (acceleration * DELTA_T);
-
-		barrier();
-
-		models[id][3].xyz = location;
-		velocities[id].xyz = velocity;
+		locations2[id].xyz = locations1[id].xyz + velocities1[id].xyz * DELTA_T + ((DELTA_T * DELTA_T) / 2) * acceleration;
+		velocities2[id].xyz = velocities1[id].xyz + (acceleration * DELTA_T);
 	}
 	else {
-		barrier();
+		vec3 sum = vec3(0, 0, 0);
+		for( int i = 0; i < numSpheres; i++ ) {
+			vec3 dv = locations2[id].xyz - locations2[id].xyz;
+			float brackets = dot(dv, dv) + SOFTEN * SOFTEN;
+			float divisor = sqrt(brackets * brackets * brackets);
+			sum += (masses[i] / divisor) * dv;
+		}
+		vec3 acceleration = sum * G;
+		locations1[id].xyz = locations2[id].xyz + velocities2[id].xyz * DELTA_T + ((DELTA_T * DELTA_T) / 2) * acceleration;
+		velocities1[id].xyz = velocities2[id].xyz + (acceleration * DELTA_T);
 	}
 }
 

@@ -41,13 +41,8 @@ const (
 )
 
 const (
-	framesPerSecond = 60.0
-	secondsPerFrame = 1 / framesPerSecond
-	rotationSpeed = ((2 * math.Pi) / 8) * secondsPerFrame
-)
-
-const (
-	numSpheres = 30000
+	numSpheres = 32768
+	localWorkGroupSize = 128
 )
 
 const (
@@ -66,10 +61,19 @@ var scrolling bool
 var scrollDirection float32
 
 var animating bool
-var speedMultiplier float32 = 1
+
+var activeBuffers int32 = 1
+
+var globalWorkGroupSize int32
 
 
 func main() {
+	globalWorkGroupSize = numSpheres / localWorkGroupSize
+	if numSpheres % localWorkGroupSize != 0 {
+		globalWorkGroupSize += 1
+	}
+
+
 	if err := glfw.Init(); err != nil {
 		log.Fatalln("Failed to initialize glfw:", err)
 	}
@@ -123,7 +127,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		defer gl.DeleteProgram(gravityProgram)
+		defer gl.DeleteProgram(gravityProgram1)
 
 		gl.DeleteShader(computeShader)
 	}
@@ -189,6 +193,11 @@ func main() {
 		gl.DeleteShader(vertexShader)
 	}
 
+
+	gravityProgramActiveBuffers := gl.GetUniformLocations(gravityProgram, gl.Str("active_buffers\x00"))
+	sphereProgramActiveBuffers := gl.GetUniformLocations(sphereProgram, gl.Str("active_buffers\x00"))
+	gl.ProgramUniform1i(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
+	gl.ProgramUniform1i(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
 
 	projection := mgl.Perspective(
 		math.Pi / 4,
@@ -308,15 +317,6 @@ func main() {
 	gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
 
 
-	cpSpeedMultLoc := gl.GetUniformLocation(gravityProgram, gl.Str("speedMultiplier\x00"))
-	cpNumSpheresLoc := gl.GetUniformLocation(gravityProgram, gl.Str("numSpheres\x00"))
-	var numInvocations uint32 = numSpheres / 256
-	if numSpheres % 256  != 0 {
-		numInvocations += 1
-	}
-	gl.ProgramUniform1ui(gravityProgram, cpNumSpheresLoc, numSpheres)
-
-
 	var orbLocations [numSpheres]mgl.Vec3
 	var orbMasses [numSpheres]float32
 	var orbMassLocations [numSpheres]mgl.Vec3
@@ -385,21 +385,48 @@ func main() {
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, massBuffer)
 
 
-		var velocityBuffer uint32
-		gl.CreateBuffers(1, &velocityBuffer)
-		gl.NamedBufferStorage(velocityBuffer, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		var velocityBuffer1 uint32
+		gl.CreateBuffers(1, &velocityBuffer1)
+		gl.NamedBufferStorage(velocityBuffer1, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
 		{
-			ptr := gl.MapNamedBuffer(velocityBuffer, gl.WRITE_ONLY)
+			ptr := gl.MapNamedBuffer(velocityBuffer1, gl.WRITE_ONLY)
 			velocities := (*[numSpheres]mgl.Vec4)(ptr)[:]
 
 			for i := 0; i < numSpheres; i++ {
 				velocities[i] = orbVelocities[i].Vec4(1)
 			}
 
-			gl.UnmapNamedBuffer(velocityBuffer)
+			gl.UnmapNamedBuffer(velocityBuffer1)
 		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, velocityBuffer)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, velocityBuffer1)
+
+		var velocityBuffer2 uint32
+		gl.CreateBuffers(1, &velocityBuffer2)
+		gl.NamedBufferStorage(velocityBuffer2, numSpheres * 4 * 4, nil, 0)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, velocityBuffer2)
+
+
+		var locationBuffer1 uint32
+		gl.CreateBuffers(1, &locationBuffer1)
+		gl.NamedBufferStorage(locationBuffer1, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		{
+			ptr := gl.MapNamedBuffer(locationBuffer1, gl.WRITE_ONLY)
+			locations := (*[numSpheres]mgl.Vec4)(ptr)[:]
+
+			for i := 0; i < numSpheres; i++ {
+				locations[i] = orbLocations[i].Vec4(1)
+			}
+
+			gl.UnmapNamedBuffer(locationBuffer1)
+		}
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, locationBuffer1)
+
+		var locationBuffer2 uint32
+		gl.CreateBuffers(1, &locationBuffer2)
+		gl.NamedBufferStorage(locationBuffer2, numSpheres * 4 * 4, nil, 0)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 4, locationBuffer2)
 	}
+
 
 	var axisVertexArray uint32
 	gl.CreateVertexArrays(1, &axisVertexArray)
@@ -442,16 +469,16 @@ func main() {
 		gl.VertexArrayAttribBinding(axisVertexArray, 1, 1)
 		gl.VertexArrayAttribFormat(axisVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
-		var imbo uint32
-		gl.CreateBuffers(1, &imbo)
-		gl.NamedBufferStorage(imbo, 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		var instanceModelBuffer uint32
+		gl.CreateBuffers(1, &instanceModelBuffer)
+		gl.NamedBufferStorage(instanceModelBuffer, 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
 		{
-			ptr := gl.MapNamedBuffer(imbo, gl.WRITE_ONLY)
+			ptr := gl.MapNamedBuffer(instanceModelBuffer, gl.WRITE_ONLY)
 			models := (*[1]mgl.Mat4)(ptr)[:]
 			models[0] = mgl.Scale3D(22500.0, 22500.0, 22500.0)
-			gl.UnmapNamedBuffer(imbo)
+			gl.UnmapNamedBuffer(instanceModelBuffer)
 		}
-		gl.VertexArrayVertexBuffer(axisVertexArray, 2, imbo, 0, 4 * 4 * 4)
+		gl.VertexArrayVertexBuffer(axisVertexArray, 2, instanceModelBuffer, 0, 4 * 4 * 4)
 		gl.VertexArrayBindingDivisor(axisVertexArray, 2, 1)
 		for i := uint32(0); i < 4; i++ {
 			gl.EnableVertexArrayAttrib(axisVertexArray, 2 + i)
@@ -466,6 +493,7 @@ func main() {
 			)
 		}
 	}
+
 
 	var sphereVertexArray uint32
 	gl.CreateVertexArrays(1, &sphereVertexArray)
@@ -545,7 +573,6 @@ func main() {
 		gl.VertexArrayAttribBinding(sphereVertexArray, 1, 1)
 		gl.VertexArrayAttribFormat(sphereVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
-
 		var instanceModelBuffer uint32
 		gl.CreateBuffers(1, &instanceModelBuffer)
 		gl.NamedBufferStorage(instanceModelBuffer, numSpheres * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
@@ -553,17 +580,13 @@ func main() {
 			ptr := gl.MapNamedBuffer(instanceModelBuffer, gl.WRITE_ONLY)
 			models := (*[numSpheres]mgl.Mat4)(ptr)[:]
 
-			models[0] = mgl.Translate3D(0, 0, 0).Mul4(mgl.Scale3D(864.0, 864.0, 864.0))
+			models[0] = mgl.Scale3D(864.0, 864.0, 864.0)
 			for i := 1; i < numSpheres; i++ {
-				x := orbLocations[i].X()
-				y := orbLocations[i].Y()
-				z := orbLocations[i].Z()
-				models[i] = mgl.Translate3D(x, y, z).Mul4(mgl.Scale3D(28.0, 28.0, 28.0))
+				models[i] = mgl.Scale3D(28.0, 28.0, 28.0)
 			}
 
 			gl.UnmapNamedBuffer(instanceModelBuffer)
 		}
-
 		gl.VertexArrayVertexBuffer(sphereVertexArray, 2, instanceModelBuffer, 0, 4 * 4 * 4)
 		gl.VertexArrayBindingDivisor(sphereVertexArray, 2, 1)
 		for i := uint32(0); i < 4; i++ {
@@ -571,12 +594,8 @@ func main() {
 			gl.VertexArrayAttribBinding(sphereVertexArray, 2 + i, 2)
 			gl.VertexArrayAttribFormat(sphereVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
 		}
-
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, instanceModelBuffer)
 	}
 
-
-//	  gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 
 	gl.Enable(gl.DEPTH_TEST)
 
@@ -585,13 +604,11 @@ func main() {
 
 	var frameCounter uint
 	var timeSinceLastSecond float64
-	var timeSinceLastRender float64 = 1
 	var loopTimeStart float64 = glfw.GetTime()
 	var loopTimeElapsed float64
 	for !window.ShouldClose() {
 		// time measurements
 		loopTimeElapsed = glfw.GetTime() - loopTimeStart
-		timeSinceLastRender += loopTimeElapsed
 		timeSinceLastSecond += loopTimeElapsed
 		loopTimeStart = glfw.GetTime()
 
@@ -600,123 +617,127 @@ func main() {
 		glfw.PollEvents()
 
 
-		if timeSinceLastRender > secondsPerFrame {
-			timeSinceLastRender = 0
+		frameCounter += 1
 
-			frameCounter += 1
-
-			if timeSinceLastSecond > 1 {
-			    timeSinceLastSecond = 0
-			    fmt.Println("FPS:", frameCounter)
-			    frameCounter = 0
-			}
-
-
-			// animating
-			if animating {
-				gl.ProgramUniform1f(gravityProgram, cpSpeedMultLoc, speedMultiplier)
-				gl.UseProgram(gravityProgram)
-				gl.DispatchCompute(numInvocations, 1, 1)
-				gl.UseProgram(0)
-			}
-
-
-			// input handling
-			if (leftKeyPressed || leftKeyOn) && !(rightKeyPressed || rightKeyOn) {
-				moveLeft = true
-			} else if (rightKeyPressed || rightKeyOn) && !(leftKeyPressed || leftKeyOn) {
-				moveRight = true
-			}
-
-			leftKeyPressed, rightKeyPressed = false, false
-
-			if (upKeyPressed || upKeyOn) && !(downKeyPressed || downKeyOn) {
-				dot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
-				if dot < 0.99 {
-					moveUp = true
-				}
-			} else if (downKeyPressed || downKeyOn) && !(upKeyPressed || upKeyOn) {
-				dot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
-				if dot < 0.99 {
-					moveDown = true
-				}
-			}
-
-			upKeyPressed, downKeyPressed = false, false
-
-			if moveLeft {
-				rotate := mgl.HomogRotate3D(-float32(rotationSpeed), mgl.Vec3{0, 1, 0})
-				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-				view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-			} else if moveRight {
-				rotate := mgl.HomogRotate3D(float32(rotationSpeed), mgl.Vec3{0, 1, 0})
-				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-				view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-			}
-
-			moveLeft, moveRight = false, false
-
-			if moveUp {
-				axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-				rotate := mgl.HomogRotate3D(-float32(rotationSpeed), axis)
-				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-				view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-			} else if moveDown {
-				axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-				rotate := mgl.HomogRotate3D(float32(rotationSpeed), axis)
-				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-				view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-			}
-
-			moveUp, moveDown = false, false
-
-			if scrolling {
-				scroll := camera.root.Normalize().Mul(scrollDirection * 2096.0)
-				newRoot := camera.root.Add(scroll)
-				newRootLength := newRoot.Len()
-				if newRootLength > 1024.0 && newRootLength < 44000.0 {
-					camera.root = newRoot
-					view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-				}
-
-			}
-
-			scrollDirection = 0
-			scrolling = false
-
-
-			// rendering
-			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-			gl.UseProgram(axisProgram)
-			gl.BindVertexArray(axisVertexArray)
-			gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
-			gl.BindVertexArray(0)
-			gl.UseProgram(0)
-
-			gl.UseProgram(sphereProgram)
-			gl.BindVertexArray(sphereVertexArray)
-			gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
-			gl.BindVertexArray(0)
-			gl.UseProgram(0)
-
-			window.SwapBuffers()
+		if timeSinceLastSecond > 1 {
+		    timeSinceLastSecond = 0
+		    fmt.Println("FPS:", frameCounter)
+		    frameCounter = 0
 		}
+
+
+		// animating
+		if animating {
+			if activeGravityProgram == 1 {
+				gl.UseProgram(gravityProgram1)
+				gl.DispatchCompute(globalWorkgroupSize, 1, 1)
+				gl.UseProgram(0)
+				activeGravityProgram = 2
+			}
+			else {
+				gl.UseProgram(gravityProgram2)
+				gl.DispatchCompute(globalWorkgroupSize, 1, 1)
+				gl.UseProgram(0)
+				activeGravityProgram = 1
+			}
+		}
+
+
+		// input handling
+		if (leftKeyPressed || leftKeyOn) && !(rightKeyPressed || rightKeyOn) {
+			moveLeft = true
+		} else if (rightKeyPressed || rightKeyOn) && !(leftKeyPressed || leftKeyOn) {
+			moveRight = true
+		}
+
+		leftKeyPressed, rightKeyPressed = false, false
+
+		if (upKeyPressed || upKeyOn) && !(downKeyPressed || downKeyOn) {
+			dot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
+			if dot < 0.99 {
+				moveUp = true
+			}
+		} else if (downKeyPressed || downKeyOn) && !(upKeyPressed || upKeyOn) {
+			dot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
+			if dot < 0.99 {
+				moveDown = true
+			}
+		}
+
+		upKeyPressed, downKeyPressed = false, false
+
+		if moveLeft {
+			rotate := mgl.HomogRotate3D(-float32(rotationSpeed), mgl.Vec3{0, 1, 0})
+			camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+			view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+			gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+			gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+			gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+		} else if moveRight {
+			rotate := mgl.HomogRotate3D(float32(rotationSpeed), mgl.Vec3{0, 1, 0})
+			camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+			view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+			gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+			gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+			gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+		}
+
+		moveLeft, moveRight = false, false
+
+		if moveUp {
+			axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+			rotate := mgl.HomogRotate3D(-float32(rotationSpeed), axis)
+			camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+			view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+			gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+			gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+			gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+		} else if moveDown {
+			axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+			rotate := mgl.HomogRotate3D(float32(rotationSpeed), axis)
+			camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+			view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+			gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+			gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+			gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+		}
+
+		moveUp, moveDown = false, false
+
+		if scrolling {
+			scroll := camera.root.Normalize().Mul(scrollDirection * 2096.0)
+			newRoot := camera.root.Add(scroll)
+			newRootLength := newRoot.Len()
+			if newRootLength > 1024.0 && newRootLength < 44000.0 {
+				camera.root = newRoot
+				view = mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+			}
+
+		}
+
+		scrollDirection = 0
+		scrolling = false
+
+
+		// rendering
+		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+		gl.UseProgram(axisProgram)
+		gl.BindVertexArray(axisVertexArray)
+		gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
+		gl.BindVertexArray(0)
+		gl.UseProgram(0)
+
+		gl.UseProgram(sphereProgram)
+		gl.BindVertexArray(sphereVertexArray)
+		gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
+		gl.BindVertexArray(0)
+		gl.UseProgram(0)
+
+		window.SwapBuffers()
 	}
 }
 
