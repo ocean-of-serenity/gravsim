@@ -41,6 +41,10 @@ const (
 )
 
 const (
+	rotationSpeed = ((2 * math.Pi) / 8) * (1 / 64.0)
+)
+
+const (
 	numSpheres = 32768
 	localWorkGroupSize = 128
 )
@@ -62,9 +66,9 @@ var scrollDirection float32
 
 var animating bool
 
-var activeBuffers int32 = 1
+var activeBuffers uint32 = 1
 
-var globalWorkGroupSize int32
+var globalWorkGroupSize uint32
 
 
 func main() {
@@ -82,7 +86,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 5)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
+//	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
 	window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
 	if err != nil {
@@ -127,7 +131,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		defer gl.DeleteProgram(gravityProgram1)
+		defer gl.DeleteProgram(gravityProgram)
 
 		gl.DeleteShader(computeShader)
 	}
@@ -194,10 +198,13 @@ func main() {
 	}
 
 
-	gravityProgramActiveBuffers := gl.GetUniformLocations(gravityProgram, gl.Str("active_buffers\x00"))
-	sphereProgramActiveBuffers := gl.GetUniformLocations(sphereProgram, gl.Str("active_buffers\x00"))
-	gl.ProgramUniform1i(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
-	gl.ProgramUniform1i(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
+	gravityProgramActiveBuffers := gl.GetUniformLocation(gravityProgram, gl.Str("active_buffers\x00"))
+	sphereProgramActiveBuffers := gl.GetUniformLocation(sphereProgram, gl.Str("active_buffers\x00"))
+	gl.ProgramUniform1ui(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
+	gl.ProgramUniform1ui(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
+
+	gravityProgramNumSpheres := gl.GetUniformLocation(gravityProgram, gl.Str("num_spheres\x00"))
+	gl.ProgramUniform1ui(gravityProgram, gravityProgramNumSpheres, numSpheres)
 
 	projection := mgl.Perspective(
 		math.Pi / 4,
@@ -271,25 +278,6 @@ func main() {
 				case glfw.Press:
 					animating = !animating
 				}
-			case glfw.KeyQ:
-				switch action {
-				case glfw.Press:
-					if speedMultiplier < 64 {
-						speedMultiplier *= 2
-					}
-				}
-			case glfw.KeyE:
-				switch action {
-				case glfw.Press:
-					if speedMultiplier > 0.015625 {
-						speedMultiplier /= 2
-					}
-				}
-			case glfw.KeyF:
-				switch action {
-				case glfw.Press:
-					speedMultiplier = 1
-				}
 			}
 		},
 	)
@@ -337,7 +325,7 @@ func main() {
 		scale := 1000.0 + rand.Float32() * 21000.0
 		orbLocations[i] = direction.Mul(scale)
 
-		orbMasses[i] = float32(math.Pow10(rand.Intn(7))) * rand.Float32()
+		orbMasses[i] = float32(math.Pow10(rand.Intn(3))) * rand.Float32()
 
 		orbMassLocations[i] = orbLocations[i].Mul(orbMasses[i])
 
@@ -402,7 +390,17 @@ func main() {
 
 		var velocityBuffer2 uint32
 		gl.CreateBuffers(1, &velocityBuffer2)
-		gl.NamedBufferStorage(velocityBuffer2, numSpheres * 4 * 4, nil, 0)
+		gl.NamedBufferStorage(velocityBuffer2, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		{
+			ptr := gl.MapNamedBuffer(velocityBuffer2, gl.WRITE_ONLY)
+			velocities := (*[numSpheres]mgl.Vec4)(ptr)[:]
+
+			for i := 0; i < numSpheres; i++ {
+				velocities[i] = orbVelocities[i].Vec4(1)
+			}
+
+			gl.UnmapNamedBuffer(velocityBuffer2)
+		}
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, velocityBuffer2)
 
 
@@ -423,7 +421,17 @@ func main() {
 
 		var locationBuffer2 uint32
 		gl.CreateBuffers(1, &locationBuffer2)
-		gl.NamedBufferStorage(locationBuffer2, numSpheres * 4 * 4, nil, 0)
+		gl.NamedBufferStorage(locationBuffer2, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		{
+			ptr := gl.MapNamedBuffer(locationBuffer2, gl.WRITE_ONLY)
+			locations := (*[numSpheres]mgl.Vec4)(ptr)[:]
+
+			for i := 0; i < numSpheres; i++ {
+				locations[i] = orbLocations[i].Vec4(1)
+			}
+
+			gl.UnmapNamedBuffer(locationBuffer2)
+		}
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 4, locationBuffer2)
 	}
 
@@ -606,6 +614,9 @@ func main() {
 	var timeSinceLastSecond float64
 	var loopTimeStart float64 = glfw.GetTime()
 	var loopTimeElapsed float64
+	var query, queryReady uint32
+	var queryDuration uint64
+	gl.GenQueries(1, &query)
 	for !window.ShouldClose() {
 		// time measurements
 		loopTimeElapsed = glfw.GetTime() - loopTimeStart
@@ -625,21 +636,33 @@ func main() {
 		    frameCounter = 0
 		}
 
+		fmt.Print("data: ")
 
 		// animating
 		if animating {
-			if activeGravityProgram == 1 {
-				gl.UseProgram(gravityProgram1)
-				gl.DispatchCompute(globalWorkgroupSize, 1, 1)
-				gl.UseProgram(0)
-				activeGravityProgram = 2
+			gl.UseProgram(gravityProgram)
+			gl.BeginQuery(gl.TIME_ELAPSED, query)
+			gl.DispatchCompute(globalWorkGroupSize, 1, 1)
+			gl.EndQuery(gl.TIME_ELAPSED)
+			gl.UseProgram(0)
+			for {
+				gl.GetQueryObjectuiv(query, gl.QUERY_RESULT_AVAILABLE, &queryReady)
+				if queryReady == gl.TRUE {
+					break
+				}
 			}
-			else {
-				gl.UseProgram(gravityProgram2)
-				gl.DispatchCompute(globalWorkgroupSize, 1, 1)
-				gl.UseProgram(0)
-				activeGravityProgram = 1
+			gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
+			fmt.Printf("yes, %v, ", queryDuration)
+
+			if activeBuffers == 1 {
+				activeBuffers = 2
+			} else {
+				activeBuffers = 1
 			}
+			gl.ProgramUniform1ui(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
+			gl.ProgramUniform1ui(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
+		} else {
+			fmt.Print("no, 0, ")
 		}
 
 
@@ -727,15 +750,35 @@ func main() {
 
 		gl.UseProgram(axisProgram)
 		gl.BindVertexArray(axisVertexArray)
+		gl.BeginQuery(gl.TIME_ELAPSED, query)
 		gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
+		gl.EndQuery(gl.TIME_ELAPSED)
 		gl.BindVertexArray(0)
 		gl.UseProgram(0)
+		for {
+			gl.GetQueryObjectuiv(query, gl.QUERY_RESULT_AVAILABLE, &queryReady)
+			if queryReady == gl.TRUE {
+				break
+			}
+		}
+		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
+		fmt.Printf("%v, ", queryDuration)
 
 		gl.UseProgram(sphereProgram)
 		gl.BindVertexArray(sphereVertexArray)
+		gl.BeginQuery(gl.TIME_ELAPSED, query)
 		gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, numSpheres)
+		gl.EndQuery(gl.TIME_ELAPSED)
 		gl.BindVertexArray(0)
 		gl.UseProgram(0)
+		for {
+			gl.GetQueryObjectuiv(query, gl.QUERY_RESULT_AVAILABLE, &queryReady)
+			if queryReady == gl.TRUE {
+				break
+			}
+		}
+		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
+		fmt.Printf("%v\n", queryDuration)
 
 		window.SwapBuffers()
 	}

@@ -2,7 +2,7 @@
 #version 450 core
 
 
-uniform int active_buffers;
+uniform uint active_buffers;
 
 uniform mat4 projection;
 uniform mat4 view;
