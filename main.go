@@ -32,6 +32,10 @@ type Camera struct {
 	root, watch mgl.Vec3
 }
 
+type Orb struct {
+	location1, velocity1, location2, velocity2 mgl.Vec4
+}
+
 
 const (
 	initWindowWidth = 1280
@@ -86,7 +90,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 5)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-//	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
+	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
 	window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
 	if err != nil {
@@ -315,7 +319,6 @@ func main() {
 	orbMassLocations[0] = orbLocations[0].Mul(orbMasses[0])
 	sumOrbMass = orbMasses[0]
 	sumOrbMassLocations = orbMassLocations[0]
-	fmt.Println("loc:", orbLocations[0], "mass:", orbMasses[0])
 	for i := 1; i < numSpheres; i++ {
 		direction := mgl.Vec3{
 			rand.Float32() - 0.5,
@@ -332,10 +335,7 @@ func main() {
 		sumOrbMass += orbMasses[i]
 
 		sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
-
-		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i])
 	}
-	fmt.Println("mass:", sumOrbMass)
 
 	var orbVelocities [numSpheres]mgl.Vec3
 	orbVelocities[0] = mgl.Vec3{0, 0, 0}
@@ -351,88 +351,27 @@ func main() {
 
 		// initial velocity
 		orbVelocities[i] = dir.Mul(mag)
-
-		fmt.Println(orbVelocities[i])
 	}
 
 
 	{
-		var massBuffer uint32
-		gl.CreateBuffers(1, &massBuffer)
-		gl.NamedBufferStorage(massBuffer, numSpheres * 4, nil, gl.MAP_WRITE_BIT)
+		var orbBuffer uint32
+		gl.CreateBuffers(1, &orbBuffer)
+		gl.NamedBufferStorage(orbBuffer, numSpheres * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
 		{
-			ptr := gl.MapNamedBuffer(massBuffer, gl.WRITE_ONLY)
-			masses := (*[numSpheres]float32)(ptr)[:]
+			ptr := gl.MapNamedBuffer(orbBuffer, gl.WRITE_ONLY)
+			orbs := (*[numSpheres]Orb)(ptr)[:]
 
 			for i := 0; i < numSpheres; i++ {
-				masses[i] = orbMasses[i]
+				orbs[i].location1 = orbLocations[i].Vec4(orbMasses[i])
+				orbs[i].velocity1 = orbVelocities[i].Vec4(1)
+				orbs[i].location2 = orbLocations[i].Vec4(orbMasses[i])
+				orbs[i].velocity2 = orbVelocities[i].Vec4(1)
 			}
 
-			gl.UnmapNamedBuffer(massBuffer)
+			gl.UnmapNamedBuffer(orbBuffer)
 		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, massBuffer)
-
-
-		var velocityBuffer1 uint32
-		gl.CreateBuffers(1, &velocityBuffer1)
-		gl.NamedBufferStorage(velocityBuffer1, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
-		{
-			ptr := gl.MapNamedBuffer(velocityBuffer1, gl.WRITE_ONLY)
-			velocities := (*[numSpheres]mgl.Vec4)(ptr)[:]
-
-			for i := 0; i < numSpheres; i++ {
-				velocities[i] = orbVelocities[i].Vec4(1)
-			}
-
-			gl.UnmapNamedBuffer(velocityBuffer1)
-		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, velocityBuffer1)
-
-		var velocityBuffer2 uint32
-		gl.CreateBuffers(1, &velocityBuffer2)
-		gl.NamedBufferStorage(velocityBuffer2, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
-		{
-			ptr := gl.MapNamedBuffer(velocityBuffer2, gl.WRITE_ONLY)
-			velocities := (*[numSpheres]mgl.Vec4)(ptr)[:]
-
-			for i := 0; i < numSpheres; i++ {
-				velocities[i] = orbVelocities[i].Vec4(1)
-			}
-
-			gl.UnmapNamedBuffer(velocityBuffer2)
-		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, velocityBuffer2)
-
-
-		var locationBuffer1 uint32
-		gl.CreateBuffers(1, &locationBuffer1)
-		gl.NamedBufferStorage(locationBuffer1, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
-		{
-			ptr := gl.MapNamedBuffer(locationBuffer1, gl.WRITE_ONLY)
-			locations := (*[numSpheres]mgl.Vec4)(ptr)[:]
-
-			for i := 0; i < numSpheres; i++ {
-				locations[i] = orbLocations[i].Vec4(1)
-			}
-
-			gl.UnmapNamedBuffer(locationBuffer1)
-		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, locationBuffer1)
-
-		var locationBuffer2 uint32
-		gl.CreateBuffers(1, &locationBuffer2)
-		gl.NamedBufferStorage(locationBuffer2, numSpheres * 4 * 4, nil, gl.MAP_WRITE_BIT)
-		{
-			ptr := gl.MapNamedBuffer(locationBuffer2, gl.WRITE_ONLY)
-			locations := (*[numSpheres]mgl.Vec4)(ptr)[:]
-
-			for i := 0; i < numSpheres; i++ {
-				locations[i] = orbLocations[i].Vec4(1)
-			}
-
-			gl.UnmapNamedBuffer(locationBuffer2)
-		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 4, locationBuffer2)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, orbBuffer)
 	}
 
 
@@ -636,7 +575,7 @@ func main() {
 		    frameCounter = 0
 		}
 
-		fmt.Print("data: ")
+//		fmt.Print("data: ")
 
 		// animating
 		if animating {
@@ -652,7 +591,7 @@ func main() {
 				}
 			}
 			gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-			fmt.Printf("yes, %v, ", queryDuration)
+//			fmt.Printf("yes, %v, ", queryDuration)
 
 			if activeBuffers == 1 {
 				activeBuffers = 2
@@ -662,7 +601,7 @@ func main() {
 			gl.ProgramUniform1ui(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
 			gl.ProgramUniform1ui(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
 		} else {
-			fmt.Print("no, 0, ")
+//			fmt.Print("no, 0, ")
 		}
 
 
@@ -762,7 +701,7 @@ func main() {
 			}
 		}
 		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-		fmt.Printf("%v, ", queryDuration)
+//		fmt.Printf("%v, ", queryDuration)
 
 		gl.UseProgram(sphereProgram)
 		gl.BindVertexArray(sphereVertexArray)
@@ -778,7 +717,7 @@ func main() {
 			}
 		}
 		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-		fmt.Printf("%v\n", queryDuration)
+//		fmt.Printf("%v\n", queryDuration)
 
 		window.SwapBuffers()
 	}

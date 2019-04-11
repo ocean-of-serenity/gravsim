@@ -8,12 +8,16 @@ uniform mat4 projection;
 uniform mat4 view;
 
 
-layout(std430, binding=2) buffer Locations1 {
-	vec4 locations1[];
+struct Orb {
+	vec4 location1;
+	vec4 velocity1;
+	vec4 location2;
+	vec4 velocity2;
 };
 
-layout(std430, binding=4) buffer Locations2 {
-	vec4 locations2[];
+
+layout(std430, binding=0) buffer Orbs {
+	Orb orbs[];
 };
 
 
@@ -35,7 +39,7 @@ out tes {
 void main() {
     out_.instance = in_[0].instance;
 
-	vec3 location = (active_buffers == 1 ? locations2[out_.instance].xyz : locations1[out_.instance].xyz);
+	vec3 location = (active_buffers == 1 ? orbs[out_.instance].location2.xyz : orbs[out_.instance].location1.xyz);
 	mat4 model = in_[0].model;
 	model[3].xyz = location;
 
