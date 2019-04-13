@@ -121,7 +121,7 @@ func main() {
 
 	log.Println("OpenGL version:", gl.GoStr(gl.GetString(gl.VERSION)))
 
-	glfw.SwapInterval(1)
+	glfw.SwapInterval(0)
 
 
 	var gravityProgram uint32
