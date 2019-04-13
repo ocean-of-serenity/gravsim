@@ -90,7 +90,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 5)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
+//	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
 	window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
 	if err != nil {
