@@ -12,7 +12,7 @@ import (
 	"strings"
 	"math/rand"
 	"time"
-	"unsafe"
+//	"unsafe"
 
 	"github.com/go-gl/gl/v4.5-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
@@ -32,26 +32,26 @@ type Camera struct {
 	root, watch mgl.Vec3
 }
 
+type Duration struct {
+	forceCompute, axisRender, sphereRender uint64
+}
+
 
 const (
 	initWindowWidth = 1280
 	initWindowHeight = 720
 	minWindowWidth = 512
 	minWindowHeight = 288
-)
 
-const (
 	rotationSpeed = ((2 * math.Pi) / 8) * (1 / 64.0)
-)
 
-const (
 	numSpheres = 32768
 	localWorkGroupSize = 128
-)
 
-const (
 //	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
+
+	profilingLogLength = 10000
 )
 
 
@@ -64,11 +64,13 @@ var moveLeft, moveRight, moveUp, moveDown bool
 var scrolling bool
 var scrollDirection float32
 
-var animating bool
+var animating bool = true
 
 var activeBuffers uint32 = 1
 
 var globalWorkGroupSize uint32
+
+var profilingLog [profilingLogLength]Duration
 
 
 func main() {
@@ -101,23 +103,23 @@ func main() {
 		log.Fatalln("Failed to initialize glow", err)
 	}
 
-	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
-	gl.DebugMessageCallback(
-		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
-			log.Println(
-				debugSeverityString(severity),
-				debugSourceString(source),
-				debugTypeString(gltype),
-				id,
-				message,
-			)
-		},
-		nil,
-	)
+//	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+//	gl.DebugMessageCallback(
+//		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
+//			log.Println(
+//				debugSeverityString(severity),
+//				debugSourceString(source),
+//				debugTypeString(gltype),
+//				id,
+//				message,
+//			)
+//		},
+//		nil,
+//	)
 
 	log.Println("OpenGL version:", gl.GoStr(gl.GetString(gl.VERSION)))
 
-	glfw.SwapInterval(1)
+	glfw.SwapInterval(0)
 
 
 	var gravityProgram uint32
@@ -315,7 +317,6 @@ func main() {
 	orbMassLocations[0] = orbLocations[0].Mul(orbMasses[0])
 	sumOrbMass = orbMasses[0]
 	sumOrbMassLocations = orbMassLocations[0]
-	fmt.Println("loc:", orbLocations[0], "mass:", orbMasses[0])
 	for i := 1; i < numSpheres; i++ {
 		direction := mgl.Vec3{
 			rand.Float32() - 0.5,
@@ -332,10 +333,7 @@ func main() {
 		sumOrbMass += orbMasses[i]
 
 		sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
-
-		fmt.Println("loc:", orbLocations[i], "mass:", orbMasses[i])
 	}
-	fmt.Println("mass:", sumOrbMass)
 
 	var orbVelocities [numSpheres]mgl.Vec3
 	orbVelocities[0] = mgl.Vec3{0, 0, 0}
@@ -351,8 +349,6 @@ func main() {
 
 		// initial velocity
 		orbVelocities[i] = dir.Mul(mag)
-
-		fmt.Println(orbVelocities[i])
 	}
 
 
@@ -617,7 +613,7 @@ func main() {
 	var query, queryReady uint32
 	var queryDuration uint64
 	gl.GenQueries(1, &query)
-	for !window.ShouldClose() {
+	for i := 0; !window.ShouldClose() && i < profilingLogLength; i++ {
 		// time measurements
 		loopTimeElapsed = glfw.GetTime() - loopTimeStart
 		timeSinceLastSecond += loopTimeElapsed
@@ -629,14 +625,12 @@ func main() {
 
 
 		frameCounter += 1
-
 		if timeSinceLastSecond > 1 {
 		    timeSinceLastSecond = 0
 		    fmt.Println("FPS:", frameCounter)
 		    frameCounter = 0
 		}
 
-		fmt.Print("data: ")
 
 		// animating
 		if animating {
@@ -652,7 +646,7 @@ func main() {
 				}
 			}
 			gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-			fmt.Printf("yes, %v, ", queryDuration)
+			profilingLog[i].forceCompute = queryDuration
 
 			if activeBuffers == 1 {
 				activeBuffers = 2
@@ -661,8 +655,6 @@ func main() {
 			}
 			gl.ProgramUniform1ui(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
 			gl.ProgramUniform1ui(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
-		} else {
-			fmt.Print("no, 0, ")
 		}
 
 
@@ -762,7 +754,7 @@ func main() {
 			}
 		}
 		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-		fmt.Printf("%v, ", queryDuration)
+		profilingLog[i].axisRender = queryDuration
 
 		gl.UseProgram(sphereProgram)
 		gl.BindVertexArray(sphereVertexArray)
@@ -778,9 +770,23 @@ func main() {
 			}
 		}
 		gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-		fmt.Printf("%v\n", queryDuration)
+		profilingLog[i].sphereRender = queryDuration
 
 		window.SwapBuffers()
+	}
+
+
+	fileName := fmt.Sprintf("%v_spheres.csv", numSpheres)
+	file, err := os.Create(fileName)
+	if err != nil {
+		log.Fatalln("Could not create '%s': %s", fileName, err)
+	}
+
+	for _, duration := range profilingLog {
+		_, err := fmt.Fprintln(file, fmt.Sprintf("%v, %v, %v", duration.forceCompute, duration.axisRender, duration.sphereRender))
+		if err != nil {
+			log.Fatalln("Could not write to '%s': %s", fileName, err)
+		}
 	}
 }
 
