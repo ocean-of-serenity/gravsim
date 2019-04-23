@@ -9,15 +9,17 @@ uniform mat4 view;
 
 
 struct Orb {
-	vec4 location1;
-	vec4 velocity1;
-	vec4 location2;
-	vec4 velocity2;
+	vec4 location;
+	vec4 velocity;
 };
 
 
-layout(std430, binding=0) buffer Orbs {
-	Orb orbs[];
+layout(std430, binding=0) buffer Orbs1 {
+	Orb orbs1[];
+};
+
+layout(std430, binding=1) buffer Orbs2 {
+	Orb orbs2[];
 };
 
 
@@ -39,7 +41,7 @@ out tes {
 void main() {
     out_.instance = in_[0].instance;
 
-	vec3 location = (active_buffers == 1 ? orbs[out_.instance].location2.xyz : orbs[out_.instance].location1.xyz);
+	vec3 location = (active_buffers == 1 ? orbs2[out_.instance].location.xyz : orbs1[out_.instance].location.xyz);
 	mat4 model = in_[0].model;
 	model[3].xyz = location;
 

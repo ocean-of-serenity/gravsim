@@ -56,5 +56,5 @@ dkms.conf
 tags
 *.zip
 unoptimized/
-cache/
+cache_optimized/
 

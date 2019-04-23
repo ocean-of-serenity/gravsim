@@ -33,7 +33,7 @@ type Camera struct {
 }
 
 type Orb struct {
-	location1, velocity1, location2, velocity2 mgl.Vec4
+	location, velocity mgl.Vec4
 }
 
 type Duration struct {
@@ -357,23 +357,37 @@ func main() {
 
 
 	{
-		var orbBuffer uint32
-		gl.CreateBuffers(1, &orbBuffer)
-		gl.NamedBufferStorage(orbBuffer, numSpheres * 4 * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		var orbBuffer1 uint32
+		gl.CreateBuffers(1, &orbBuffer1)
+		gl.NamedBufferStorage(orbBuffer1, numSpheres * 2 * 4 * 4, nil, gl.MAP_WRITE_BIT)
 		{
-			ptr := gl.MapNamedBuffer(orbBuffer, gl.WRITE_ONLY)
+			ptr := gl.MapNamedBuffer(orbBuffer1, gl.WRITE_ONLY)
 			orbs := (*[numSpheres]Orb)(ptr)[:]
 
 			for i := 0; i < numSpheres; i++ {
-				orbs[i].location1 = orbLocations[i].Vec4(orbMasses[i])
-				orbs[i].velocity1 = orbVelocities[i].Vec4(1)
-				orbs[i].location2 = orbLocations[i].Vec4(orbMasses[i])
-				orbs[i].velocity2 = orbVelocities[i].Vec4(1)
+				orbs[i].location = orbLocations[i].Vec4(orbMasses[i])
+				orbs[i].velocity = orbVelocities[i].Vec4(1)
 			}
 
-			gl.UnmapNamedBuffer(orbBuffer)
+			gl.UnmapNamedBuffer(orbBuffer1)
 		}
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, orbBuffer)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, orbBuffer1)
+
+		var orbBuffer2 uint32
+		gl.CreateBuffers(1, &orbBuffer2)
+		gl.NamedBufferStorage(orbBuffer2, numSpheres * 2 * 4 * 4, nil, gl.MAP_WRITE_BIT)
+		{
+			ptr := gl.MapNamedBuffer(orbBuffer2, gl.WRITE_ONLY)
+			orbs := (*[numSpheres]Orb)(ptr)[:]
+
+			for i := 0; i < numSpheres; i++ {
+				orbs[i].location = orbLocations[i].Vec4(orbMasses[i])
+				orbs[i].velocity = orbVelocities[i].Vec4(1)
+			}
+
+			gl.UnmapNamedBuffer(orbBuffer2)
+		}
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, orbBuffer2)
 	}
 
 
@@ -570,7 +584,6 @@ func main() {
 
 
 		frameCounter += 1
-
 		if timeSinceLastSecond > 1 {
 		    timeSinceLastSecond = 0
 		    fmt.Println("FPS:", frameCounter)
