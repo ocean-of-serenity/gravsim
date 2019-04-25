@@ -12,7 +12,7 @@ import (
 	"strings"
 	"math/rand"
 	"time"
-//	"unsafe"
+	"unsafe"
 
 	"github.com/go-gl/gl/v4.5-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
@@ -50,7 +50,7 @@ const (
 	rotationSpeed = ((2 * math.Pi) / 8) * (1 / 64.0)
 
 	numSpheres = 32768
-	localWorkGroupSize = 128
+	localWorkGroupSize = 256
 
 //	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
@@ -76,6 +76,8 @@ var globalWorkGroupSize uint32
 
 var profilingLog [profilingLogLength]Duration
 
+var maxComputeSharedMemorySize int32
+
 
 func main() {
 	globalWorkGroupSize = numSpheres / localWorkGroupSize
@@ -92,7 +94,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 5)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-//	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
+	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
 	window, err := glfw.CreateWindow(initWindowWidth, initWindowHeight, "OpenGL Test", nil, nil)
 	if err != nil {
@@ -107,21 +109,24 @@ func main() {
 		log.Fatalln("Failed to initialize glow", err)
 	}
 
-//	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
-//	gl.DebugMessageCallback(
-//		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
-//			log.Println(
-//				debugSeverityString(severity),
-//				debugSourceString(source),
-//				debugTypeString(gltype),
-//				id,
-//				message,
-//			)
-//		},
-//		nil,
-//	)
+	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+	gl.DebugMessageCallback(
+		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
+			log.Println(
+				debugSeverityString(severity),
+				debugSourceString(source),
+				debugTypeString(gltype),
+				id,
+				message,
+			)
+		},
+		nil,
+	)
 
 	log.Println("OpenGL version:", gl.GoStr(gl.GetString(gl.VERSION)))
+
+	gl.GetIntegerv(gl.MAX_COMPUTE_SHARED_MEMORY_SIZE, &maxComputeSharedMemorySize)
+	log.Println("max shared mem size:", maxComputeSharedMemorySize)
 
 	glfw.SwapInterval(0)
 
@@ -203,14 +208,10 @@ func main() {
 		gl.DeleteShader(vertexShader)
 	}
 
-
 	gravityProgramActiveBuffers := gl.GetUniformLocation(gravityProgram, gl.Str("active_buffers\x00"))
 	sphereProgramActiveBuffers := gl.GetUniformLocation(sphereProgram, gl.Str("active_buffers\x00"))
 	gl.ProgramUniform1ui(gravityProgram, gravityProgramActiveBuffers, activeBuffers)
 	gl.ProgramUniform1ui(sphereProgram, sphereProgramActiveBuffers, activeBuffers)
-
-	gravityProgramNumSpheres := gl.GetUniformLocation(gravityProgram, gl.Str("num_spheres\x00"))
-	gl.ProgramUniform1ui(gravityProgram, gravityProgramNumSpheres, numSpheres)
 
 	projection := mgl.Perspective(
 		math.Pi / 4,
@@ -812,7 +813,7 @@ func newShader(fileName string, shaderType uint32) (uint32, error) {
 func newGravityProgram(computeShader uint32) (uint32, error) {
 	program := gl.CreateProgram()
 	if program == 0 {
-		return 0, fmt.Errorf("Could not create name for program!")
+		return 0, fmt.Errorf("Could not create name for gravity program!")
 	}
 
 	gl.AttachShader(program, computeShader)
@@ -820,13 +821,13 @@ func newGravityProgram(computeShader uint32) (uint32, error) {
 	gl.DetachShader(program, computeShader)
 	gl.ValidateProgram(program)
 
-	var validateStatus int32
-	gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
+//	var validateStatus int32
+//	gl.GetProgramiv(program, gl.VALIDATE_STATUS, &validateStatus)
 
 	var linkStatus int32
 	gl.GetProgramiv(program, gl.LINK_STATUS, &linkStatus)
 
-	if validateStatus == gl.FALSE || linkStatus == gl.FALSE {
+	if /*validateStatus == gl.FALSE ||*/ linkStatus == gl.FALSE {
 		var infoLogLength int32
 		gl.GetProgramiv(program, gl.INFO_LOG_LENGTH, &infoLogLength)
 
@@ -836,7 +837,7 @@ func newGravityProgram(computeShader uint32) (uint32, error) {
 		gl.DeleteProgram(program)
 
 		return 0, fmt.Errorf(
-			"Failed to link program!\n#>> InfoLog:\n%s",
+			"Failed to link gravity program!\n#>> InfoLog:\n%s",
 			infoLog,
 		)
 	}
@@ -848,7 +849,7 @@ func newGravityProgram(computeShader uint32) (uint32, error) {
 func newAxisProgram(vertexShader, fragmentShader uint32) (uint32, error) {
 	program := gl.CreateProgram()
 	if program == 0 {
-		return 0, fmt.Errorf("Could not create name for program!")
+		return 0, fmt.Errorf("Could not create name for axis program!")
 	}
 
 	gl.AttachShader(program, vertexShader)
@@ -874,7 +875,7 @@ func newAxisProgram(vertexShader, fragmentShader uint32) (uint32, error) {
 		gl.DeleteProgram(program)
 
 		return 0, fmt.Errorf(
-			"Failed to link program!\n#>> InfoLog:\n%s",
+			"Failed to link axis program!\n#>> InfoLog:\n%s",
 			infoLog,
 		)
 	}
@@ -886,7 +887,7 @@ func newAxisProgram(vertexShader, fragmentShader uint32) (uint32, error) {
 func newSphereProgram(vertexShader, tesselationControlShader, tesselationEvaluationShader, fragmentShader uint32) (uint32, error) {
 	program := gl.CreateProgram()
 	if program == 0 {
-		return 0, fmt.Errorf("Could not create name for program!")
+		return 0, fmt.Errorf("Could not create name for sphere program!")
 	}
 
 	gl.AttachShader(program, vertexShader)
@@ -916,7 +917,7 @@ func newSphereProgram(vertexShader, tesselationControlShader, tesselationEvaluat
 		gl.DeleteProgram(program)
 
 		return 0, fmt.Errorf(
-			"Failed to link program!\n#>> InfoLog:\n%s",
+			"Failed to link sphere program!\n#>> InfoLog:\n%s",
 			infoLog,
 		)
 	}
