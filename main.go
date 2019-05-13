@@ -83,7 +83,7 @@ func main() {
 	glfw.WindowHint(glfw.ContextVersionMajor, 4)
 	glfw.WindowHint(glfw.ContextVersionMinor, 5)
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
+//	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
 	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "OpenGL Test", nil, nil)
 	if err != nil {
@@ -99,19 +99,19 @@ func main() {
 		log.Fatalln("Failed to initialize glow", err)
 	}
 
-	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
-	gl.DebugMessageCallback(
-		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
-			log.Println(
-				debugSeverityString(severity),
-				debugSourceString(source),
-				debugTypeString(gltype),
-				id,
-				message,
-			)
-		},
-		nil,
-	)
+//	gl.Enable(gl.DEBUG_OUTPUT_SYNCHRONOUS)
+//	gl.DebugMessageCallback(
+//		func(source, gltype, id, severity uint32, _ int32, message string, _ unsafe.Pointer) {
+//			log.Println(
+//				debugSeverityString(severity),
+//				debugSourceString(source),
+//				debugTypeString(gltype),
+//				id,
+//				message,
+//			)
+//		},
+//		nil,
+//	)
 
 	// enable depth testing in the fragment shader
 	gl.Enable(gl.DEPTH_TEST)
@@ -278,6 +278,9 @@ func main() {
 	// set up coordinate axis render prerequisites
 	gl.CreateVertexArrays(1, &axisVertexArray)
 	{
+		gl.EnableVertexArrayAttrib(axisVertexArray, 0)
+		gl.VertexArrayAttribFormat(axisVertexArray, 0, 3, gl.FLOAT, false, 0)
+		gl.VertexArrayAttribBinding(axisVertexArray, 0, 0)
 		var vertexBuffer uint32
 		gl.CreateBuffers(1, &vertexBuffer)
 		{
@@ -291,10 +294,10 @@ func main() {
 			gl.NamedBufferStorage(vertexBuffer, 6 * 4 * 3, unsafe.Pointer(&positions[0]), 0)
 		}
 		gl.VertexArrayVertexBuffer(axisVertexArray, 0, vertexBuffer, 0, 3 * 4)
-		gl.EnableVertexArrayAttrib(axisVertexArray, 0)
-		gl.VertexArrayAttribBinding(axisVertexArray, 0, 0)
-		gl.VertexArrayAttribFormat(axisVertexArray, 0, 3, gl.FLOAT, false, 0)
 
+		gl.EnableVertexArrayAttrib(axisVertexArray, 1)
+		gl.VertexArrayAttribFormat(axisVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
+		gl.VertexArrayAttribBinding(axisVertexArray, 1, 1)
 		var vertexColorBuffer uint32
 		gl.CreateBuffers(1, &vertexColorBuffer)
 		{
@@ -308,10 +311,13 @@ func main() {
 			gl.NamedBufferStorage(vertexColorBuffer, 6 * 3, unsafe.Pointer(&colors[0]), 0)
 		}
 		gl.VertexArrayVertexBuffer(axisVertexArray, 1, vertexColorBuffer, 0, 3)
-		gl.EnableVertexArrayAttrib(axisVertexArray, 1)
-		gl.VertexArrayAttribBinding(axisVertexArray, 1, 1)
-		gl.VertexArrayAttribFormat(axisVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
+		gl.VertexArrayBindingDivisor(axisVertexArray, 2, 1)
+		for i := uint32(0); i < 4; i++ {
+			gl.EnableVertexArrayAttrib(axisVertexArray, 2 + i)
+			gl.VertexArrayAttribFormat(axisVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
+			gl.VertexArrayAttribBinding(axisVertexArray, 2 + i, 2)
+		}
 		var instanceModelBuffer uint32
 		gl.CreateBuffers(1, &instanceModelBuffer)
 		{
@@ -320,25 +326,15 @@ func main() {
 			gl.NamedBufferStorage(instanceModelBuffer, 4 * 4 * 4, unsafe.Pointer(&models[0]), 0)
 		}
 		gl.VertexArrayVertexBuffer(axisVertexArray, 2, instanceModelBuffer, 0, 4 * 4 * 4)
-		gl.VertexArrayBindingDivisor(axisVertexArray, 2, 1)
-		for i := uint32(0); i < 4; i++ {
-			gl.EnableVertexArrayAttrib(axisVertexArray, 2 + i)
-			gl.VertexArrayAttribBinding(axisVertexArray, 2 + i, 2)
-			gl.VertexArrayAttribFormat(
-				axisVertexArray,
-				2 + i,
-				4,
-				gl.FLOAT,
-				false,
-				4 * 4 * i,
-			)
-		}
 	}
 
 
 	// set up sphere render prerequisites
 	gl.CreateVertexArrays(1, &sphereVertexArray)
 	{
+		gl.EnableVertexArrayAttrib(sphereVertexArray, 0)
+		gl.VertexArrayAttribFormat(sphereVertexArray, 0, 3, gl.FLOAT, false, 0)
+		gl.VertexArrayAttribBinding(sphereVertexArray, 0, 0)
 		var vertexBuffer uint32
 		gl.CreateBuffers(1, &vertexBuffer)
 		{
@@ -352,9 +348,6 @@ func main() {
 			gl.NamedBufferStorage(vertexBuffer, 6 * 4 * 3, unsafe.Pointer(&positions[0]), 0)
 		}
 		gl.VertexArrayVertexBuffer(sphereVertexArray, 0, vertexBuffer, 0, 3 * 4)
-		gl.EnableVertexArrayAttrib(sphereVertexArray, 0)
-		gl.VertexArrayAttribBinding(sphereVertexArray, 0, 0)
-		gl.VertexArrayAttribFormat(sphereVertexArray, 0, 3, gl.FLOAT, false, 0)
 
 		var elementBuffer uint32
 		gl.CreateBuffers(1, &elementBuffer)
@@ -387,6 +380,20 @@ func main() {
 			gl.NamedBufferStorage(elementBuffer, 24 * 4, unsafe.Pointer(&elements[0]), 0)
 		}
 		gl.VertexArrayElementBuffer(sphereVertexArray, elementBuffer)
+
+		gl.EnableVertexArrayAttrib(sphereVertexArray, 1)
+		gl.VertexArrayAttribFormat(sphereVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
+		gl.VertexArrayBindingDivisor(sphereVertexArray, 1, 1)
+		gl.VertexArrayAttribBinding(sphereVertexArray, 1, 1)
+		// the size of the buffer for this attribute array changes and will be re-bound in the loop below
+
+		gl.VertexArrayBindingDivisor(sphereVertexArray, 2, 1)
+		for i := uint32(0); i < 4; i++ {
+			gl.EnableVertexArrayAttrib(sphereVertexArray, 2 + i)
+			gl.VertexArrayAttribFormat(sphereVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
+			gl.VertexArrayAttribBinding(sphereVertexArray, 2 + i, 2)
+		}
+		// ditto here
 	}
 
 
@@ -436,10 +443,6 @@ func main() {
 					gl.NamedBufferStorage(sphereInstanceColorBuffer, numSpheres * 3, unsafe.Pointer(shdr.Data), 0)
 				}
 				gl.VertexArrayVertexBuffer(sphereVertexArray, 1, sphereInstanceColorBuffer, 0, 3)
-				gl.VertexArrayBindingDivisor(sphereVertexArray, 1, 1)
-				gl.EnableVertexArrayAttrib(sphereVertexArray, 1)
-				gl.VertexArrayAttribBinding(sphereVertexArray, 1, 1)
-				gl.VertexArrayAttribFormat(sphereVertexArray, 1, 3, gl.UNSIGNED_BYTE, true, 0)
 
 				gl.DeleteBuffers(1, &sphereInstanceModelBuffer)
 				gl.CreateBuffers(1, &sphereInstanceModelBuffer)
@@ -453,12 +456,6 @@ func main() {
 					gl.NamedBufferStorage(sphereInstanceModelBuffer, numSpheres * 4 * 4 * 4, unsafe.Pointer(shdr.Data), 0)
 				}
 				gl.VertexArrayVertexBuffer(sphereVertexArray, 2, sphereInstanceModelBuffer, 0, 4 * 4 * 4)
-				gl.VertexArrayBindingDivisor(sphereVertexArray, 2, 1)
-				for i := uint32(0); i < 4; i++ {
-					gl.EnableVertexArrayAttrib(sphereVertexArray, 2 + i)
-					gl.VertexArrayAttribBinding(sphereVertexArray, 2 + i, 2)
-					gl.VertexArrayAttribFormat(sphereVertexArray, 2 + i, 4, gl.FLOAT, false, 4 * 4 * i)
-				}
 			}
 
 
