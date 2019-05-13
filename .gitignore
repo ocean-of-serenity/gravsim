@@ -57,4 +57,5 @@ tags
 *.zip
 unoptimized/
 cache_optimized/
+*.csv
 

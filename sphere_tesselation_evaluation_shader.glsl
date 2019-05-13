@@ -2,8 +2,6 @@
 #version 450 core
 
 
-uniform uint active_buffers;
-
 uniform mat4 projection;
 uniform mat4 view;
 
@@ -14,12 +12,8 @@ struct Orb {
 };
 
 
-layout(std430, binding=0) buffer Orbs1 {
-	Orb orbs1[];
-};
-
-layout(std430, binding=1) buffer Orbs2 {
-	Orb orbs2[];
+layout(std430, binding=1) buffer Orbs {
+	Orb orbs[];
 };
 
 
@@ -41,9 +35,8 @@ out tes {
 void main() {
     out_.instance = in_[0].instance;
 
-	vec3 location = (active_buffers == 1 ? orbs2[out_.instance].location.xyz : orbs1[out_.instance].location.xyz);
 	mat4 model = in_[0].model;
-	model[3].xyz = location;
+	model[3].xyz = orbs[out_.instance].location.xyz;
 
     vec3 p0 = gl_TessCoord.x * gl_in[0].gl_Position.xyz;
     vec3 p1 = gl_TessCoord.y * gl_in[1].gl_Position.xyz;
