@@ -54,7 +54,7 @@ const (
 //	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
 
-	profilingLogLength = 10000
+	profilingLogLength = 1000
 )
 
 
@@ -401,7 +401,7 @@ func main() {
 	var localWorkGroupSize uint32
 	for localWorkGroupSize = 32; localWorkGroupSize <= 2048; localWorkGroupSize *= 2 {
 		var globalWorkGroupSize uint32
-		for numSpheres := 8; numSpheres <= 262144; numSpheres *= 2 {
+		for numSpheres := 2; numSpheres <= 262144; numSpheres *= 2 {
 			globalWorkGroupSize = uint32(numSpheres) / localWorkGroupSize
 			if uint32(numSpheres) % localWorkGroupSize != 0 {
 				globalWorkGroupSize += 1
@@ -526,6 +526,7 @@ func main() {
 			var queryReady uint32
 			var queryDuration uint64
 			var orbBuffer1Active bool
+			var progressBar string = ""
 			for i := 0; i < profilingLogLength; i++ {
 				// time measurements
 				loopTimeElapsed = glfw.GetTime() - loopTimeStart
@@ -540,11 +541,15 @@ func main() {
 				glfw.PollEvents()
 
 
-				// FPS counter, displays FPS every second
+				// FPS counter and progress bar, displays FPS every second
+				if i % 25 == 0 {
+					progressBar += "="
+				}
+
 				frameCounter += 1
-				if timeSinceLastSecond > 1 {
+				if timeSinceLastSecond > 1 || i == profilingLogLength - 1 {
 				    timeSinceLastSecond = 0
-				    fmt.Printf("FPS: %v\r", frameCounter)
+					fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
 				    frameCounter = 0
 				}
 
@@ -666,9 +671,7 @@ func main() {
 				gl.UseProgram(sphereProgram)
 				gl.BindVertexArray(sphereVertexArray)
 				gl.BeginQuery(gl.TIME_ELAPSED, query)
-				fmt.Println("drawing spheres")
 				gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, int32(numSpheres))
-				fmt.Println("done with drawing spheres")
 				gl.EndQuery(gl.TIME_ELAPSED)
 				gl.BindVertexArray(0)
 				gl.UseProgram(0)
