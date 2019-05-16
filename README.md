@@ -3,11 +3,7 @@ gravsim
 
 Gravity Simulation using Go and OpenGL 4.5 with GLOW and GLFW.
 
-
-Animation Hotkeys:
-- R - start/stop animation
-
-Camera moves around the center
+The Camera moves around the center
 
 Camera Hotkeys:
 - W - move camera upwards
