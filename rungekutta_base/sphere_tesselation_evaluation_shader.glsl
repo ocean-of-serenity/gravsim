@@ -6,14 +6,8 @@ uniform mat4 projection;
 uniform mat4 view;
 
 
-struct Orb {
-	vec4 location;
-	vec4 velocity;
-};
-
-
-layout(std430, binding=1) buffer Orbs {
-	Orb orbs[];
+layout(std430, binding=1) readonly buffer Locations {
+	vec4 locations[];
 };
 
 
@@ -36,7 +30,7 @@ void main() {
     out_.instance = in_[0].instance;
 
 	mat4 model = in_[0].model;
-	model[3].xyz = orbs[out_.instance].location.xyz;
+	model[3].xyz = locations[out_.instance].xyz;
 
     vec3 p0 = gl_TessCoord.x * gl_in[0].gl_Position.xyz;
     vec3 p1 = gl_TessCoord.y * gl_in[1].gl_Position.xyz;
