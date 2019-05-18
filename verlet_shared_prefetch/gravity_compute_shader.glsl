@@ -24,10 +24,6 @@ layout(std430, binding=1) buffer Locations1 {
 	vec4 locations1[];
 };
 
-layout(std430, binding=2) buffer Velocities {
-	vec4 velocities[];
-};
-
 
 shared vec4 shared_locations[LOCAL_WORKGROUP_SIZE];
 
@@ -66,13 +62,11 @@ void main() {
 	}
 	const vec3 acceleration = sum * G;
 
-	vec4 velocity = velocities[gl_GlobalInvocationID.x];
+	const vec4 last_location = locations1[gl_GlobalInvocationID.x];
 
-	location.xyz += DELTA_T * velocity.xyz + ((DELTA_T * DELTA_T) / 2) * acceleration;
-	velocity.xyz += DELTA_T * acceleration;
+	location.xyz += location.xyz - last_location.xyz + DELTA_T * DELTA_T * acceleration;
 
 	locations1[gl_GlobalInvocationID.x] = location;
-	velocities[gl_GlobalInvocationID.x] = velocity;
 }
 
 

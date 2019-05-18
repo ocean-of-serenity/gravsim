@@ -54,7 +54,6 @@ const (
 
 	cameraRotationDistancePerFrame = ((2 * math.Pi) / 8) * (1 / 64.0)
 
-//	G = 1.887130407e-7		// Lunar Masses, Solar Radii and hours
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
 
 	profilingLogLength = 1000
@@ -63,7 +62,8 @@ const (
 
 var gravityProgram, axisProgram, sphereProgram, axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer uint32
 var sphereInstanceModelBuffer, gravityLocationBuffer0, gravityLocationBuffer1, gravityVelocityBuffer, query uint32
-var axisProgramView, sphereProgramView, sphereProgramCameraLocation, gravityProgramNumSpheres int32
+
+var axisProgramView, sphereProgramView, sphereProgramCameraLocation int32
 
 var camera Camera = Camera{mgl.Vec3{8000.0, 12000.0, 16000.0}, mgl.Vec3{0, 0, 0}}
 
@@ -80,7 +80,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("20060102150405"))
+	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -94,7 +94,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "OpenGL Test", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Heun Shared Prefetch", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -231,8 +231,6 @@ func main() {
 
 		sphereProgramCameraLocation = gl.GetUniformLocation(sphereProgram, gl.Str("camera_location\x00"))
 		gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-
-		gravityProgramNumSpheres = gl.GetUniformLocation(gravityProgram, gl.Str("num_spheres\x00"))
 	}
 
 
@@ -408,9 +406,9 @@ func main() {
 
 	// profiling loops
 	var localWorkGroupSize uint32
-	for localWorkGroupSize = 32; localWorkGroupSize <= 1024; localWorkGroupSize *= 2 {
-		var globalWorkGroupSize uint32
-		for numSpheres := 2; numSpheres <= 262144; numSpheres *= 2 {
+	var globalWorkGroupSize uint32
+	for localWorkGroupSize = 32; localWorkGroupSize <= 1024 && !window.ShouldClose(); localWorkGroupSize *= 2 {
+		for numSpheres := 2; numSpheres <= 262144 && !window.ShouldClose(); numSpheres *= 2 {
 			globalWorkGroupSize = uint32(numSpheres) / localWorkGroupSize
 			if uint32(numSpheres) % localWorkGroupSize != 0 {
 				globalWorkGroupSize += 1
@@ -419,7 +417,7 @@ func main() {
 			profilingLog = Duration{0, 0}
 
 
-			fmt.Printf("Profiling; Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
+			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
 
 
 			{
@@ -542,25 +540,14 @@ func main() {
 
 			// main loop; breaks when profiling is done
 			var frameCounter uint32
-			var timeSinceLastSecond float64
-			var loopTimeStart float64 = glfw.GetTime()
-			var loopTimeElapsed float64
+			var timeSinceLastSecond, loopTimeStart, loopTimeElapsed, sumTimePerFrame float64
 			var queryReady uint32
 			var queryDuration uint64
 			var locationBuffer1Active bool
 			var progressBar string = ""
-			for i := 0; i < profilingLogLength; i++ {
-				// time measurements
-				loopTimeElapsed = glfw.GetTime() - loopTimeStart
-				timeSinceLastSecond += loopTimeElapsed
+			i := 0
+			for ; i < profilingLogLength && !window.ShouldClose(); i++ {
 				loopTimeStart = glfw.GetTime()
-
-
-				// GLFW event handling
-				if window.ShouldClose() {
-					return
-				}
-				glfw.PollEvents()
 
 
 				// FPS counter and progress bar, displays FPS every second
@@ -568,12 +555,18 @@ func main() {
 					progressBar += "="
 				}
 
+				sumTimePerFrame += loopTimeElapsed
+				timeSinceLastSecond += loopTimeElapsed
 				frameCounter += 1
-				if timeSinceLastSecond > 1 || i == profilingLogLength - 1 {
+				if timeSinceLastSecond > 1 {
 				    timeSinceLastSecond = 0
 					fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
 				    frameCounter = 0
 				}
+
+
+				// GLFW event handling
+				glfw.PollEvents()
 
 
 				// use compute shader to update sphere positions
@@ -635,7 +628,7 @@ func main() {
 
 				if moveUp {
 					axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-					rotate := mgl.HomogRotate3D(cameraRotationDistancePerFrame, axis)
+					rotate := mgl.HomogRotate3D(-cameraRotationDistancePerFrame, axis)
 					camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
 					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
 					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
@@ -706,9 +699,17 @@ func main() {
 				locationBuffer1Active = !locationBuffer1Active
 
 				window.SwapBuffers()
-			}
-			fmt.Println()
 
+
+				loopTimeElapsed = glfw.GetTime() - loopTimeStart
+			}
+			fmt.Println(fmt.Sprintf(
+				"[%-40s] %4d/%4d Frames; %4d AVG FPS\r",
+				progressBar,
+				i,
+				profilingLogLength,
+				uint32(math.Round(1.0 / (sumTimePerFrame / float64(i)))),
+			))
 
 
 			// write profiling measurements to filesystem

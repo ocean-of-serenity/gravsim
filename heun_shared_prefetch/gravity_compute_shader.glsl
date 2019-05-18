@@ -39,17 +39,24 @@ void main() {
 
 	vec4 location = locations0[gl_GlobalInvocationID.x];
 
+	vec4 prefetch_location;
+	if( gl_LocalInvocationID.x < NUM_SPHERES ) {
+		prefetch_location = locations0[gl_LocalInvocationID.x];
+	}
+
 	vec3 sum = vec3(0, 0, 0);
 	for( int tile = 0; tile < NUM_TILES; tile++ ) {
-		const uint tile_start_index = tile * LOCAL_WORKGROUP_SIZE;
-		const uint tile_fetch_index = tile_start_index + gl_LocalInvocationID.x;
-
-		if( tile_fetch_index < NUM_SPHERES ) {
-			shared_locations[gl_LocalInvocationID.x] = locations0[tile_fetch_index];
-		}
+		shared_locations[gl_LocalInvocationID.x] = prefetch_location;
 		memoryBarrierShared();
 		barrier();
 
+		const uint tile_fetch_index = (tile + 1) * LOCAL_WORKGROUP_SIZE + gl_LocalInvocationID.x;
+		if( tile_fetch_index < NUM_SPHERES ) {
+			prefetch_location = locations0[tile_fetch_index];
+		}
+		barrier();
+
+		const uint tile_start_index = tile * LOCAL_WORKGROUP_SIZE;
 		for( int i = 0; tile_start_index + i < NUM_SPHERES && i < LOCAL_WORKGROUP_SIZE; i++ ) {
 			const vec3 dv = shared_locations[i].xyz - location.xyz;
 			const float brackets = dot(dv, dv) + SOFTEN * SOFTEN;
@@ -59,10 +66,10 @@ void main() {
 	}
 	const vec3 acceleration = sum * G;
 
-	vec4 velocity = velocities[gl_GlobalInvocationID.x];
+	const vec4 old_velocity = velocities[gl_GlobalInvocationID.x];
+	const vec4 velocity = vec4(old_velocity.xyz + DELTA_T * acceleration, 0);
 
-	location.xyz += DELTA_T * velocity.xyz + ((DELTA_T * DELTA_T) / 2) * acceleration;
-	velocity.xyz += DELTA_T * acceleration;
+	location.xyz += DELTA_T * 0.5 * (old_velocity.xyz + velocity.xyz);
 
 	locations1[gl_GlobalInvocationID.x] = location;
 	velocities[gl_GlobalInvocationID.x] = velocity;
