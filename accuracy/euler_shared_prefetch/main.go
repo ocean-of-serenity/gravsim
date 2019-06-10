@@ -43,8 +43,8 @@ type Velocity struct {
 	padding float32
 }
 
-type Duration struct {
-	forceCompute, sphereRender uint64
+type ConservedQuantities struct {
+	totalEnergy, angularMomentum, totalForce float32
 }
 
 
@@ -60,8 +60,9 @@ const (
 )
 
 
-var gravityProgram, axisProgram, sphereProgram, axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer uint32
-var sphereInstanceModelBuffer, gravityLocationBuffer0, gravityLocationBuffer1, gravityVelocityBuffer, query uint32
+var gravityProgram, profilingProgram, axisProgram, sphereProgram uint32
+var axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer, sphereInstanceModelBuffer uint32
+var gravityLocationBuffer0, gravityLocationBuffer1, gravityVelocityBuffer, profileResultsBuffer uint32
 
 var axisProgramView, sphereProgramView, sphereProgramCameraLocation int32
 
@@ -74,13 +75,13 @@ var moveLeft, moveRight, moveUp, moveDown bool
 var scrolling bool
 var scrollDirection float32
 
-var profilingLog Duration
+var profilingLog []ConservedQuantities
 var profilingFileName string
 
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("accuracy-euler_shared_prefetch-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -94,7 +95,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Base", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared Prefetch", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -183,8 +184,6 @@ func main() {
 
 	// initialize queries and shader/program uniforms and set up callbacks that might change them during runtime
 	{
-		gl.GenQueries(1, &query)
-
 		projection := mgl.Perspective(
 			math.Pi / 4,
 			float32(initialWindowWidth) / float32(initialWindowHeight),
@@ -405,332 +404,400 @@ func main() {
 
 
 	// profiling loops
-	var localWorkGroupSize uint32
+	var localWorkGroupSize uint32 = 128
 	var globalWorkGroupSize uint32
-	for localWorkGroupSize = 32; localWorkGroupSize <= 1024 && !window.ShouldClose(); localWorkGroupSize *= 2 {
-		for numSpheres := 2; numSpheres <= 262144 && !window.ShouldClose(); numSpheres *= 2 {
-			globalWorkGroupSize = uint32(numSpheres) / localWorkGroupSize
-			if uint32(numSpheres) % localWorkGroupSize != 0 {
-				globalWorkGroupSize += 1
-			}
-
-			profilingLog = Duration{0, 0}
-
-
-			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
-
-
-			{
-				gl.DeleteProgram(gravityProgram)
-				computeShader, err := newGravityShader(localWorkGroupSize, uint32(numSpheres))
-				if err != nil {
-					log.Fatalln(err)
-				}
-				gravityProgram, err = newGravityProgram(computeShader)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				gl.DeleteShader(computeShader)
-			}
-
-
-			// attach color and model data to sphere vertex array
-			{
-				gl.DeleteBuffers(1, &sphereInstanceColorBuffer)
-				gl.CreateBuffers(1, &sphereInstanceColorBuffer)
-				{
-					var colors []Color = make([]Color, numSpheres)
-					colors[0] = Color{255, 255, 255}
-					for i := 1; i < numSpheres; i++ {
-						colors[i] = Color{
-							uint8(rand.Float32() * 255),
-							uint8(rand.Float32() * 255),
-							uint8(rand.Float32() * 255),
-						}
-					}
-					shdr := (*reflect.SliceHeader)(unsafe.Pointer(&colors))
-					gl.NamedBufferStorage(sphereInstanceColorBuffer, numSpheres * 3, unsafe.Pointer(shdr.Data), 0)
-				}
-				gl.VertexArrayVertexBuffer(sphereVertexArray, 1, sphereInstanceColorBuffer, 0, 3)
-
-				gl.DeleteBuffers(1, &sphereInstanceModelBuffer)
-				gl.CreateBuffers(1, &sphereInstanceModelBuffer)
-				{
-					var models []mgl.Mat4 = make([]mgl.Mat4, numSpheres)
-					models[0] = mgl.Scale3D(864.0, 864.0, 864.0)
-					for i := 1; i < numSpheres; i++ {
-						models[i] = mgl.Scale3D(28.0, 28.0, 28.0)
-					}
-					shdr := (*reflect.SliceHeader)(unsafe.Pointer(&models))
-					gl.NamedBufferStorage(sphereInstanceModelBuffer, numSpheres * 4 * 4 * 4, unsafe.Pointer(shdr.Data), 0)
-				}
-				gl.VertexArrayVertexBuffer(sphereVertexArray, 2, sphereInstanceModelBuffer, 0, 4 * 4 * 4)
-			}
-
-
-			// generate orb positions and masses, then calculate corresponding initial velocity
-			var orbLocations []Location = make([]Location, numSpheres)
-			var orbMassLocations []mgl.Vec3 = make([]mgl.Vec3, numSpheres)
-			var sumOrbMass float32
-			var sumOrbMassLocations mgl.Vec3
-			orbLocations[0].location = mgl.Vec3{0, 0, 0}
-			orbLocations[0].mass = 1e11
-			orbMassLocations[0] = orbLocations[0].location.Mul(orbLocations[0].mass)
-			sumOrbMass = orbLocations[0].mass
-			sumOrbMassLocations = orbMassLocations[0]
-			for i := 1; i < numSpheres; i++ {
-				orbLocations[i].location = mgl.Vec3{
-					rand.Float32() - 0.5,
-					(rand.Float32() - 0.5) * 0.05,
-					rand.Float32() - 0.5,
-				}.Normalize().Mul(1000.0 + rand.Float32() * 21000.0)
-
-				orbLocations[i].mass = float32(math.Pow10(rand.Intn(3))) * rand.Float32()
-
-				orbMassLocations[i] = orbLocations[i].location.Mul(orbLocations[i].mass)
-
-				sumOrbMass += orbLocations[i].mass
-
-				sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
-			}
-
-			var orbVelocities []Velocity = make([]Velocity, numSpheres)
-			orbVelocities[0].velocity = mgl.Vec3{0, 0, 0}
-			for i := 1; i < numSpheres; i++ {
-				// displacement vector from barycenter (without current orb) to current orb
-				dv := orbLocations[i].location.Sub(sumOrbMassLocations.Sub(orbMassLocations[i]).Mul(1 / (sumOrbMass - orbLocations[i].mass)))
-
-				// velocity magnitude
-				mag := ((sumOrbMass - orbLocations[i].mass) / sumOrbMass) * float32(math.Sqrt(float64((G * sumOrbMass) / dv.Len())))
-
-				// velocity direction
-				dir := dv.Cross(mgl.Vec3{0, 1, 0}).Normalize()
-
-				// initial velocity
-				orbVelocities[i].velocity = dir.Mul(mag)
-			}
-
-
-			// copy orb locations into shader storage buffers for use by the shaders
-			gl.DeleteBuffers(1, &gravityLocationBuffer0)
-			gl.CreateBuffers(1, &gravityLocationBuffer0)
-			{
-				// populate new buffer with data from data pointer of slice variable 'orbLocations'
-				shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbLocations))
-				gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
-			}
-			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
-
-			// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
-			gl.DeleteBuffers(1, &gravityLocationBuffer1)
-			gl.CreateBuffers(1, &gravityLocationBuffer1)
-			gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, nil, 0)
-			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
-
-			// copy orb velocities into shader storage buffers for use by the compute shader
-			gl.DeleteBuffers(1, &gravityVelocityBuffer)
-			gl.CreateBuffers(1, &gravityVelocityBuffer)
-			{
-				// populate new buffer with data from data pointer of slice variable 'orbVelocities'
-				shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbVelocities))
-				gl.NamedBufferStorage(gravityVelocityBuffer, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
-			}
-			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, gravityVelocityBuffer)
-
-
-			// main loop; breaks when profiling is done
-			var frameCounter uint32
-			var timeSinceLastSecond, loopTimeStart, loopTimeElapsed, sumTimePerFrame float64
-			var queryReady uint32
-			var queryDuration uint64
-			var locationBuffer1Active bool
-			var progressBar string = ""
-			i := 0
-			for ; i < profilingLogLength && !window.ShouldClose(); i++ {
-				loopTimeStart = glfw.GetTime()
-
-
-				// FPS counter and progress bar, displays FPS every second
-				if i % 25 == 0 {
-					progressBar += "="
-				}
-
-				sumTimePerFrame += loopTimeElapsed
-				timeSinceLastSecond += loopTimeElapsed
-				frameCounter += 1
-				if timeSinceLastSecond > 1 {
-				    timeSinceLastSecond = 0
-					fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
-				    frameCounter = 0
-				}
-
-
-				// GLFW event handling
-				glfw.PollEvents()
-
-
-				// use compute shader to update sphere positions
-				gl.UseProgram(gravityProgram)
-				gl.BeginQuery(gl.TIME_ELAPSED, query)
-				gl.DispatchCompute(globalWorkGroupSize, 1, 1)
-				gl.EndQuery(gl.TIME_ELAPSED)
-				gl.UseProgram(0)
-				for {
-					gl.GetQueryObjectuiv(query, gl.QUERY_RESULT_AVAILABLE, &queryReady)
-					if queryReady == gl.TRUE {
-						break
-					}
-				}
-				gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-				profilingLog.forceCompute += queryDuration
-
-
-				// input handling with GLFW events, determine movement direction, then move camera accordingly
-				if (leftKeyPressed || leftKeyOn) && !(rightKeyPressed || rightKeyOn) {
-					moveLeft = true
-				} else if (rightKeyPressed || rightKeyOn) && !(leftKeyPressed || leftKeyOn) {
-					moveRight = true
-				}
-
-				leftKeyPressed, rightKeyPressed = false, false
-
-				if (upKeyPressed || upKeyOn) && !(downKeyPressed || downKeyOn) {
-					dot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
-					if dot < 0.99 {
-						moveUp = true
-					}
-				} else if (downKeyPressed || downKeyOn) && !(upKeyPressed || upKeyOn) {
-					dot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
-					if dot < 0.99 {
-						moveDown = true
-					}
-				}
-
-				upKeyPressed, downKeyPressed = false, false
-
-				if moveLeft {
-					rotate := mgl.HomogRotate3D(-cameraRotationDistancePerFrame, mgl.Vec3{0, 1, 0})
-					camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-				} else if moveRight {
-					rotate := mgl.HomogRotate3D(cameraRotationDistancePerFrame, mgl.Vec3{0, 1, 0})
-					camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-				}
-
-				moveLeft, moveRight = false, false
-
-				if moveUp {
-					axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-					rotate := mgl.HomogRotate3D(-cameraRotationDistancePerFrame, axis)
-					camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-				} else if moveDown {
-					axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
-					rotate := mgl.HomogRotate3D(cameraRotationDistancePerFrame, axis)
-					camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
-					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-				}
-
-				moveUp, moveDown = false, false
-
-				if scrolling {
-					scroll := camera.root.Normalize().Mul(scrollDirection * 2096.0)
-					newRoot := camera.root.Add(scroll)
-					newRootLength := newRoot.Len()
-					if newRootLength > 1024.0 && newRootLength < 44000.0 {
-						camera.root = newRoot
-						view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
-						gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
-						gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
-						gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
-					}
-
-				}
-
-				scrollDirection = 0
-				scrolling = false
-
-
-				// rendering
-				gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-				gl.UseProgram(axisProgram)
-				gl.BindVertexArray(axisVertexArray)
-				gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
-				gl.BindVertexArray(0)
-				gl.UseProgram(0)
-
-				gl.UseProgram(sphereProgram)
-				gl.BindVertexArray(sphereVertexArray)
-				gl.BeginQuery(gl.TIME_ELAPSED, query)
-				gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, int32(numSpheres))
-				gl.EndQuery(gl.TIME_ELAPSED)
-				gl.BindVertexArray(0)
-				gl.UseProgram(0)
-				for {
-					gl.GetQueryObjectuiv(query, gl.QUERY_RESULT_AVAILABLE, &queryReady)
-					if queryReady == gl.TRUE {
-						break
-					}
-				}
-				gl.GetQueryObjectui64v(query, gl.QUERY_RESULT, &queryDuration)
-				profilingLog.sphereRender += queryDuration
-
-				if locationBuffer1Active {
-					gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
-					gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
-				} else {
-					gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer1)
-					gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer0)
-				}
-				locationBuffer1Active = !locationBuffer1Active
-
-				window.SwapBuffers()
-
-
-				loopTimeElapsed = glfw.GetTime() - loopTimeStart
-			}
-			fmt.Println(fmt.Sprintf(
-				"[%-40s] %4d/%4d Frames; %4d AVG FPS\r",
-				progressBar,
-				i,
-				profilingLogLength,
-				uint32(math.Round(1.0 / (sumTimePerFrame / float64(i)))),
-			))
-
-
-			// write profiling measurements to filesystem
-			file, err := os.OpenFile(profilingFileName, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0666)
-			if err != nil {
-				log.Fatalln("Could not open '%s': %s", profilingFileName, err)
-			}
-
-			_, err = fmt.Fprintln(file, fmt.Sprintf(
-				"%v, %v, %v, %v, %v",
-				globalWorkGroupSize,
-				localWorkGroupSize,
-				numSpheres,
-				float64(profilingLog.forceCompute) / profilingLogLength,
-				float64(profilingLog.sphereRender) / profilingLogLength,
-			))
-			if err != nil {
-				log.Fatalln("Could not write to '%s': %s", profilingFileName, err)
-			}
-			file.Close()
+	for numSpheres := 2; numSpheres <= 262144 && !window.ShouldClose(); numSpheres *= 2 {
+		globalWorkGroupSize = uint32(numSpheres) / localWorkGroupSize
+		if uint32(numSpheres) % localWorkGroupSize != 0 {
+			globalWorkGroupSize += 1
 		}
+
+		profilingLog = make([]ConservedQuantities, 3)
+
+
+		fmt.Printf("Spheres: %v\n", numSpheres)
+
+
+		{
+			gl.DeleteProgram(gravityProgram)
+			computeShader, err := newComputeShader(
+				"gravity_compute_shader.glsl",
+				localWorkGroupSize,
+				uint32(numSpheres),
+				globalWorkGroupSize,
+			)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			gravityProgram, err = newComputeProgram(computeShader)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			gl.DeleteShader(computeShader)
+		}
+
+		{
+			gl.DeleteProgram(profilingProgram)
+			computeShader, err := newComputeShader(
+				"profiling_compute_shader.glsl",
+				localWorkGroupSize,
+				uint32(numSpheres),
+				globalWorkGroupSize,
+			)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			profilingProgram, err = newComputeProgram(computeShader)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			gl.DeleteShader(computeShader)
+		}
+
+
+		// attach color and model data to sphere vertex array
+		{
+			gl.DeleteBuffers(1, &sphereInstanceColorBuffer)
+			gl.CreateBuffers(1, &sphereInstanceColorBuffer)
+			{
+				var colors []Color = make([]Color, numSpheres)
+				colors[0] = Color{255, 255, 255}
+				for i := 1; i < numSpheres; i++ {
+					colors[i] = Color{
+						uint8(rand.Float32() * 255),
+						uint8(rand.Float32() * 255),
+						uint8(rand.Float32() * 255),
+					}
+				}
+				shdr := (*reflect.SliceHeader)(unsafe.Pointer(&colors))
+				gl.NamedBufferStorage(sphereInstanceColorBuffer, numSpheres * 3, unsafe.Pointer(shdr.Data), 0)
+			}
+			gl.VertexArrayVertexBuffer(sphereVertexArray, 1, sphereInstanceColorBuffer, 0, 3)
+
+			gl.DeleteBuffers(1, &sphereInstanceModelBuffer)
+			gl.CreateBuffers(1, &sphereInstanceModelBuffer)
+			{
+				var models []mgl.Mat4 = make([]mgl.Mat4, numSpheres)
+				models[0] = mgl.Scale3D(864.0, 864.0, 864.0)
+				for i := 1; i < numSpheres; i++ {
+					models[i] = mgl.Scale3D(28.0, 28.0, 28.0)
+				}
+				shdr := (*reflect.SliceHeader)(unsafe.Pointer(&models))
+				gl.NamedBufferStorage(sphereInstanceModelBuffer, numSpheres * 4 * 4 * 4, unsafe.Pointer(shdr.Data), 0)
+			}
+			gl.VertexArrayVertexBuffer(sphereVertexArray, 2, sphereInstanceModelBuffer, 0, 4 * 4 * 4)
+		}
+
+
+		// generate orb positions and masses, then calculate corresponding initial velocity
+		var orbLocations []Location = make([]Location, numSpheres)
+		var orbMassLocations []mgl.Vec3 = make([]mgl.Vec3, numSpheres)
+		var sumOrbMass float32
+		var sumOrbMassLocations mgl.Vec3
+		orbLocations[0].location = mgl.Vec3{0, 0, 0}
+		orbLocations[0].mass = 1e11
+		orbMassLocations[0] = orbLocations[0].location.Mul(orbLocations[0].mass)
+		sumOrbMass = orbLocations[0].mass
+		sumOrbMassLocations = orbMassLocations[0]
+		for i := 1; i < numSpheres; i++ {
+			orbLocations[i].location = mgl.Vec3{
+				rand.Float32() - 0.5,
+				(rand.Float32() - 0.5) * 0.05,
+				rand.Float32() - 0.5,
+			}.Normalize().Mul(1000.0 + rand.Float32() * 21000.0)
+
+			orbLocations[i].mass = float32(math.Pow10(rand.Intn(3))) * rand.Float32()
+
+			orbMassLocations[i] = orbLocations[i].location.Mul(orbLocations[i].mass)
+
+			sumOrbMass += orbLocations[i].mass
+
+			sumOrbMassLocations = sumOrbMassLocations.Add(orbMassLocations[i])
+		}
+
+		var orbVelocities []Velocity = make([]Velocity, numSpheres)
+		orbVelocities[0].velocity = mgl.Vec3{0, 0, 0}
+		for i := 1; i < numSpheres; i++ {
+			// displacement vector from barycenter (without current orb) to current orb
+			dv := orbLocations[i].location.Sub(sumOrbMassLocations.Sub(orbMassLocations[i]).Mul(1 / (sumOrbMass - orbLocations[i].mass)))
+
+			// velocity magnitude
+			mag := ((sumOrbMass - orbLocations[i].mass) / sumOrbMass) * float32(math.Sqrt(float64((G * sumOrbMass) / dv.Len())))
+
+			// velocity direction
+			dir := dv.Cross(mgl.Vec3{0, 1, 0}).Normalize()
+
+			// initial velocity
+			orbVelocities[i].velocity = dir.Mul(mag)
+		}
+
+
+		// copy orb locations into shader storage buffers for use by the shaders
+		gl.DeleteBuffers(1, &gravityLocationBuffer0)
+		gl.CreateBuffers(1, &gravityLocationBuffer0)
+		{
+			// populate new buffer with data from data pointer of slice variable 'orbLocations'
+			shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbLocations))
+			gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
+		}
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
+
+		// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
+		gl.DeleteBuffers(1, &gravityLocationBuffer1)
+		gl.CreateBuffers(1, &gravityLocationBuffer1)
+		gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, nil, 0)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
+
+		// copy orb velocities into shader storage buffers for use by the compute shader
+		gl.DeleteBuffers(1, &gravityVelocityBuffer)
+		gl.CreateBuffers(1, &gravityVelocityBuffer)
+		{
+			// populate new buffer with data from data pointer of slice variable 'orbVelocities'
+			shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbVelocities))
+			gl.NamedBufferStorage(gravityVelocityBuffer, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
+		}
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, gravityVelocityBuffer)
+
+		gl.DeleteBuffers(1, &profileResultsBuffer)
+		gl.CreateBuffers(1, &profileResultsBuffer)
+		gl.NamedBufferStorage(profileResultsBuffer, int(globalWorkGroupSize) * 4 * 4, nil, gl.MAP_READ_BIT)
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, profileResultsBuffer)
+
+
+		gl.UseProgram(profilingProgram)
+		gl.DispatchCompute(globalWorkGroupSize, 1, 1)
+		gl.UseProgram(0)
+		gl.Finish()
+
+
+		{
+			var shdr *reflect.SliceHeader
+			var results []mgl.Vec4
+			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
+			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
+			shdr.Len = int(globalWorkGroupSize)
+			shdr.Cap = int(globalWorkGroupSize)
+			for i, result := range results {
+				if i == 0 {
+					profilingLog[0].totalEnergy = result.X()
+					profilingLog[0].angularMomentum = result.Y()
+					profilingLog[0].totalForce = result.Z()
+				} else {
+					profilingLog[0].totalEnergy += result.X()
+					profilingLog[0].angularMomentum += result.Y()
+					profilingLog[0].totalForce += result.Z()
+				}
+			}
+			gl.UnmapNamedBuffer(profileResultsBuffer)
+		}
+
+
+		// main loop; breaks when profiling is done
+		var frameCounter uint32
+		var timeSinceLastSecond, loopTimeStart, loopTimeElapsed, sumTimePerFrame float64
+		var locationBuffer1Active bool
+		var progressBar string = ""
+		i := 0
+		for ; i < profilingLogLength && !window.ShouldClose(); i++ {
+			loopTimeStart = glfw.GetTime()
+
+
+			// FPS counter and progress bar, displays FPS every second
+			if i % 25 == 0 {
+				progressBar += "="
+			}
+
+			sumTimePerFrame += loopTimeElapsed
+			timeSinceLastSecond += loopTimeElapsed
+			frameCounter += 1
+			if timeSinceLastSecond > 1 {
+			    timeSinceLastSecond = 0
+				fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
+			    frameCounter = 0
+			}
+
+
+			// GLFW event handling
+			glfw.PollEvents()
+
+
+			// use compute shader to update sphere positions
+			gl.UseProgram(gravityProgram)
+			gl.DispatchCompute(globalWorkGroupSize, 1, 1)
+			gl.UseProgram(0)
+
+
+			// input handling with GLFW events, determine movement direction, then move camera accordingly
+			if (leftKeyPressed || leftKeyOn) && !(rightKeyPressed || rightKeyOn) {
+				moveLeft = true
+			} else if (rightKeyPressed || rightKeyOn) && !(leftKeyPressed || leftKeyOn) {
+				moveRight = true
+			}
+
+			leftKeyPressed, rightKeyPressed = false, false
+
+			if (upKeyPressed || upKeyOn) && !(downKeyPressed || downKeyOn) {
+				dot := mgl.Vec3{0, 1, 0}.Dot(camera.root.Normalize())
+				if dot < 0.99 {
+					moveUp = true
+				}
+			} else if (downKeyPressed || downKeyOn) && !(upKeyPressed || upKeyOn) {
+				dot := mgl.Vec3{0, -1, 0}.Dot(camera.root.Normalize())
+				if dot < 0.99 {
+					moveDown = true
+				}
+			}
+
+			upKeyPressed, downKeyPressed = false, false
+
+			if moveLeft {
+				rotate := mgl.HomogRotate3D(-cameraRotationDistancePerFrame, mgl.Vec3{0, 1, 0})
+				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+				view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+			} else if moveRight {
+				rotate := mgl.HomogRotate3D(cameraRotationDistancePerFrame, mgl.Vec3{0, 1, 0})
+				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+				view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+			}
+
+			moveLeft, moveRight = false, false
+
+			if moveUp {
+				axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+				rotate := mgl.HomogRotate3D(-cameraRotationDistancePerFrame, axis)
+				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+				view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+			} else if moveDown {
+				axis := mgl.Vec3{0, 1, 0}.Cross(camera.root).Normalize()
+				rotate := mgl.HomogRotate3D(cameraRotationDistancePerFrame, axis)
+				camera.root = rotate.Mul4x1(camera.root.Vec4(1)).Vec3()
+				view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+				gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+				gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+				gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+			}
+
+			moveUp, moveDown = false, false
+
+			if scrolling {
+				scroll := camera.root.Normalize().Mul(scrollDirection * 2096.0)
+				newRoot := camera.root.Add(scroll)
+				newRootLength := newRoot.Len()
+				if newRootLength > 1024.0 && newRootLength < 44000.0 {
+					camera.root = newRoot
+					view := mgl.LookAtV(camera.root, camera.watch, mgl.Vec3{0, 1, 0})
+					gl.ProgramUniformMatrix4fv(sphereProgram, sphereProgramView, 1, false, &view[0])
+					gl.ProgramUniformMatrix4fv(axisProgram, axisProgramView, 1, false, &view[0])
+					gl.ProgramUniform3fv(sphereProgram, sphereProgramCameraLocation, 1, &camera.root[0])
+				}
+
+			}
+
+			scrollDirection = 0
+			scrolling = false
+
+
+			// rendering
+			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+			gl.UseProgram(axisProgram)
+			gl.BindVertexArray(axisVertexArray)
+			gl.DrawArraysInstanced(gl.LINES, 0, 6, 1)
+			gl.BindVertexArray(0)
+			gl.UseProgram(0)
+
+			gl.UseProgram(sphereProgram)
+			gl.BindVertexArray(sphereVertexArray)
+			gl.DrawElementsInstanced(gl.PATCHES, 24, gl.UNSIGNED_INT, nil, int32(numSpheres))
+			gl.BindVertexArray(0)
+			gl.UseProgram(0)
+
+			if locationBuffer1Active {
+				gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
+				gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
+			} else {
+				gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer1)
+				gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer0)
+			}
+			locationBuffer1Active = !locationBuffer1Active
+
+			window.SwapBuffers()
+
+
+			loopTimeElapsed = glfw.GetTime() - loopTimeStart
+		}
+		fmt.Printf(
+			"[%-40s] %4d/%4d Frames; %4d AVG FPS\n",
+			progressBar,
+			i,
+			profilingLogLength,
+			uint32(math.Round(1.0 / (sumTimePerFrame / float64(i)))),
+		)
+
+
+		gl.UseProgram(profilingProgram)
+		gl.DispatchCompute(globalWorkGroupSize, 1, 1)
+		gl.UseProgram(0)
+		gl.Finish()
+
+
+		{
+			var shdr *reflect.SliceHeader
+			var results []mgl.Vec4
+			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
+			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
+			shdr.Len = int(globalWorkGroupSize)
+			shdr.Cap = int(globalWorkGroupSize)
+			for i, result := range results {
+				if i == 0 {
+					profilingLog[1].totalEnergy = result.X()
+					profilingLog[1].angularMomentum = result.Y()
+					profilingLog[1].totalForce = result.Z()
+				} else {
+					profilingLog[1].totalEnergy += result.X()
+					profilingLog[1].angularMomentum += result.Y()
+					profilingLog[1].totalForce += result.Z()
+				}
+			}
+			gl.UnmapNamedBuffer(profileResultsBuffer)
+		}
+
+
+		profilingLog[2].totalEnergy = float32(math.Abs(float64(profilingLog[0].totalEnergy - profilingLog[1].totalEnergy)))
+		profilingLog[2].angularMomentum = float32(math.Abs(float64(profilingLog[0].angularMomentum - profilingLog[1].angularMomentum)))
+		profilingLog[2].totalForce = float32(math.Abs(float64(profilingLog[0].totalForce - profilingLog[1].totalForce)))
+		for _, row := range profilingLog {
+			fmt.Println(row)
+		}
+
+
+		// write profiling measurements to filesystem
+		file, err := os.OpenFile(profilingFileName, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalln("Could not open '%s': %s", profilingFileName, err)
+		}
+
+		_, err = fmt.Fprintf(
+			file,
+			"%v, %v, %v, %v\n",
+			numSpheres,
+			profilingLog[2].totalEnergy,
+			profilingLog[2].angularMomentum,
+			profilingLog[2].totalForce,
+		)
+		if err != nil {
+			log.Fatalln("Could not write to '%s': %s", profilingFileName, err)
+		}
+		file.Close()
 	}
 }
 
@@ -795,30 +862,30 @@ func newShader(fileName string, shaderType uint32) (uint32, error) {
 }
 
 
-func newGravityShader(localWorkGroupSize, numSpheres uint32) (uint32, error) {
-	file, err := os.Open("gravity_compute_shader.glsl")
+func newComputeShader(fileName string, localWorkGroupSize, numSpheres, numTiles uint32) (uint32, error) {
+	file, err := os.Open(fileName)
 	if err != nil {
-		return 0, fmt.Errorf("Could not open 'gravity_compute_shader.glsl': %s", err)
+		return 0, fmt.Errorf("Could not open '%s': %s", fileName, err)
 	}
 	defer file.Close()
 
 	fi, err := file.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("Could not obtain info on 'gravity_compute_shader.glsl': %s", err)
+		return 0, fmt.Errorf("Could not obtain info on '%s': %s", fileName, err)
 	}
 
 	bSource := make([]byte, fi.Size())
 	_, err = file.Read(bSource)
 	if err != io.EOF && err != nil {
-		return 0, fmt.Errorf("Could not read from 'gravity_compute_shader.glsl': %s", err)
+		return 0, fmt.Errorf("Could not read from '%s': %s", fileName, err)
 	}
 
 	source := string(bSource) + "\x00"
-	source = fmt.Sprintf(source, localWorkGroupSize, numSpheres)
+	source = fmt.Sprintf(source, localWorkGroupSize, numSpheres, numTiles)
 
 	shader := gl.CreateShader(gl.COMPUTE_SHADER)
 	if shader == 0 {
-		return 0, fmt.Errorf("Could not create name for shader 'gravity_compute_shader.glsl'!")
+		return 0, fmt.Errorf("Could not create name for shader '%s'!", fileName)
 	}
 
 	cSources, free := gl.Strs(source)
@@ -839,7 +906,8 @@ func newGravityShader(localWorkGroupSize, numSpheres uint32) (uint32, error) {
 		gl.DeleteShader(shader)
 
 		return 0, fmt.Errorf(
-			"Failed to compile 'gravity_compute_shader.glsl'!\n#>> Source:\n%s\n#>> InfoLog:\n%s",
+			"Failed to compile '%s'!\n#>> Source:\n%s\n#>> InfoLog:\n%s",
+			fileName,
 			source,
 			infoLog,
 		)
@@ -849,10 +917,10 @@ func newGravityShader(localWorkGroupSize, numSpheres uint32) (uint32, error) {
 }
 
 
-func newGravityProgram(computeShader uint32) (uint32, error) {
+func newComputeProgram(computeShader uint32) (uint32, error) {
 	program := gl.CreateProgram()
 	if program == 0 {
-		return 0, fmt.Errorf("Could not create name for gravity program!")
+		return 0, fmt.Errorf("Could not create name for compute program!")
 	}
 
 	gl.AttachShader(program, computeShader)
@@ -876,7 +944,7 @@ func newGravityProgram(computeShader uint32) (uint32, error) {
 		gl.DeleteProgram(program)
 
 		return 0, fmt.Errorf(
-			"Failed to link gravity program!\n#>> InfoLog:\n%s",
+			"Failed to link compute program!\n#>> InfoLog:\n%s",
 			infoLog,
 		)
 	}

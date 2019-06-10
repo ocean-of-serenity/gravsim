@@ -60,7 +60,7 @@ const (
 )
 
 
-var gravityProgram, gravityStartupProgram, axisProgram, sphereProgram, axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer uint32
+var gravityProgram, axisProgram, sphereProgram, axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer uint32
 var sphereInstanceModelBuffer, gravityLocationBuffer0, gravityLocationBuffer1, gravityVelocityBuffer, query uint32
 
 var axisProgramView, sphereProgramView, sphereProgramCameraLocation int32
@@ -80,7 +80,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("performance-euler_shared_prefetch-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -94,7 +94,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Verlet Shared Prefetch", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared Prefetch", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -417,29 +417,16 @@ func main() {
 			profilingLog = Duration{0, 0}
 
 
-			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
+			fmt.Printf("Local Workgroup Size: %v, Spheres: %v\n", localWorkGroupSize, numSpheres)
 
 
 			{
 				gl.DeleteProgram(gravityProgram)
-				computeShader, err := newGravityShader("gravity_compute_shader.glsl", localWorkGroupSize, uint32(numSpheres), globalWorkGroupSize)
+				computeShader, err := newGravityShader(localWorkGroupSize, uint32(numSpheres), globalWorkGroupSize)
 				if err != nil {
 					log.Fatalln(err)
 				}
 				gravityProgram, err = newGravityProgram(computeShader)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				gl.DeleteShader(computeShader)
-			}
-
-			{
-				gl.DeleteProgram(gravityStartupProgram)
-				computeShader, err := newGravityShader("gravity_startup_compute_shader.glsl", localWorkGroupSize, uint32(numSpheres), globalWorkGroupSize)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				gravityStartupProgram, err = newGravityProgram(computeShader)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -524,20 +511,20 @@ func main() {
 			}
 
 
-			// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
+			// copy orb locations into shader storage buffers for use by the shaders
 			gl.DeleteBuffers(1, &gravityLocationBuffer0)
 			gl.CreateBuffers(1, &gravityLocationBuffer0)
-			gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, nil, 0)
-			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
-
-			// copy orb locations into shader storage buffers for use by the shaders
-			gl.DeleteBuffers(1, &gravityLocationBuffer1)
-			gl.CreateBuffers(1, &gravityLocationBuffer1)
 			{
 				// populate new buffer with data from data pointer of slice variable 'orbLocations'
 				shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbLocations))
-				gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
+				gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
 			}
+			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
+
+			// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
+			gl.DeleteBuffers(1, &gravityLocationBuffer1)
+			gl.CreateBuffers(1, &gravityLocationBuffer1)
+			gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, nil, 0)
 			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
 
 			// copy orb velocities into shader storage buffers for use by the compute shader
@@ -549,11 +536,6 @@ func main() {
 				gl.NamedBufferStorage(gravityVelocityBuffer, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
 			}
 			gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 2, gravityVelocityBuffer)
-
-
-			gl.UseProgram(gravityStartupProgram)
-			gl.DispatchCompute(globalWorkGroupSize, 1, 1)
-			gl.UseProgram(0)
 
 
 			// main loop; breaks when profiling is done
@@ -813,22 +795,22 @@ func newShader(fileName string, shaderType uint32) (uint32, error) {
 }
 
 
-func newGravityShader(fileName string, localWorkGroupSize, numSpheres, numTiles uint32) (uint32, error) {
-	file, err := os.Open(fileName)
+func newGravityShader(localWorkGroupSize, numSpheres, numTiles uint32) (uint32, error) {
+	file, err := os.Open("gravity_compute_shader.glsl")
 	if err != nil {
-		return 0, fmt.Errorf("Could not open '%s': %s", fileName, err)
+		return 0, fmt.Errorf("Could not open 'gravity_compute_shader.glsl': %s", err)
 	}
 	defer file.Close()
 
 	fi, err := file.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("Could not obtain info on '%s': %s", fileName, err)
+		return 0, fmt.Errorf("Could not obtain info on 'gravity_compute_shader.glsl': %s", err)
 	}
 
 	bSource := make([]byte, fi.Size())
 	_, err = file.Read(bSource)
 	if err != io.EOF && err != nil {
-		return 0, fmt.Errorf("Could not read from '%s': %s", fileName, err)
+		return 0, fmt.Errorf("Could not read from 'gravity_compute_shader.glsl': %s", err)
 	}
 
 	source := string(bSource) + "\x00"
@@ -836,7 +818,7 @@ func newGravityShader(fileName string, localWorkGroupSize, numSpheres, numTiles 
 
 	shader := gl.CreateShader(gl.COMPUTE_SHADER)
 	if shader == 0 {
-		return 0, fmt.Errorf("Could not create name for shader '%s'!", fileName)
+		return 0, fmt.Errorf("Could not create name for shader 'gravity_compute_shader.glsl'!")
 	}
 
 	cSources, free := gl.Strs(source)
@@ -857,8 +839,7 @@ func newGravityShader(fileName string, localWorkGroupSize, numSpheres, numTiles 
 		gl.DeleteShader(shader)
 
 		return 0, fmt.Errorf(
-			"Failed to compile '%s'!\n#>> Source:\n%s\n#>> InfoLog:\n%s",
-			fileName,
+			"Failed to compile 'gravity_compute_shader.glsl'!\n#>> Source:\n%s\n#>> InfoLog:\n%s",
 			source,
 			infoLog,
 		)

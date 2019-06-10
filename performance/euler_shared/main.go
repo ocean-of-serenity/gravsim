@@ -80,7 +80,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("performance-euler_shared-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -94,7 +94,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared Prefetch", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -417,7 +417,7 @@ func main() {
 			profilingLog = Duration{0, 0}
 
 
-			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
+			fmt.Printf("Local Workgroup Size: %v, Spheres: %v\n", localWorkGroupSize, numSpheres)
 
 
 			{

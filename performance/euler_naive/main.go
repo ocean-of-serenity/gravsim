@@ -80,7 +80,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("performance-euler_naive-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -417,7 +417,7 @@ func main() {
 			profilingLog = Duration{0, 0}
 
 
-			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
+			fmt.Printf("Local Workgroup Size: %v, Spheres: %v\n", localWorkGroupSize, numSpheres)
 
 
 			{
@@ -730,8 +730,7 @@ func main() {
 			}
 
 			_, err = fmt.Fprintln(file, fmt.Sprintf(
-				"%v, %v, %v, %v, %v",
-				globalWorkGroupSize,
+				"%v, %v, %v, %v",
 				localWorkGroupSize,
 				numSpheres,
 				float64(profilingLog.forceCompute) / profilingLogLength,

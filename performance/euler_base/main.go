@@ -80,7 +80,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("profile-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("performance-euler_base-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -94,7 +94,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Base", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -417,12 +417,12 @@ func main() {
 			profilingLog = Duration{0, 0}
 
 
-			fmt.Printf("Global Workgroup Size: %v, Local Workgroup Size: %v, Spheres: %v\n", globalWorkGroupSize, localWorkGroupSize, numSpheres)
+			fmt.Printf("Local Workgroup Size: %v, Spheres: %v\n", localWorkGroupSize, numSpheres)
 
 
 			{
 				gl.DeleteProgram(gravityProgram)
-				computeShader, err := newGravityShader(localWorkGroupSize, uint32(numSpheres), globalWorkGroupSize)
+				computeShader, err := newGravityShader(localWorkGroupSize, uint32(numSpheres))
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -795,7 +795,7 @@ func newShader(fileName string, shaderType uint32) (uint32, error) {
 }
 
 
-func newGravityShader(localWorkGroupSize, numSpheres, numTiles uint32) (uint32, error) {
+func newGravityShader(localWorkGroupSize, numSpheres uint32) (uint32, error) {
 	file, err := os.Open("gravity_compute_shader.glsl")
 	if err != nil {
 		return 0, fmt.Errorf("Could not open 'gravity_compute_shader.glsl': %s", err)
@@ -814,7 +814,7 @@ func newGravityShader(localWorkGroupSize, numSpheres, numTiles uint32) (uint32, 
 	}
 
 	source := string(bSource) + "\x00"
-	source = fmt.Sprintf(source, localWorkGroupSize, numSpheres, numTiles)
+	source = fmt.Sprintf(source, localWorkGroupSize, numSpheres)
 
 	shader := gl.CreateShader(gl.COMPUTE_SHADER)
 	if shader == 0 {
