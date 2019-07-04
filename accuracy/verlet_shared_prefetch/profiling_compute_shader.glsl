@@ -20,8 +20,8 @@ layout(std430, binding=0) readonly buffer Locations0 {
 	vec4 locations0[];
 };
 
-layout(std430, binding=2) buffer Velocities {
-	vec4 velocities[];
+layout(std430, binding=1) readonly buffer Locations1 {
+	vec4 locations1[];
 };
 
 layout(std430, binding=3) buffer Results {
@@ -73,13 +73,14 @@ void main() {
 	const float potential_energy = 0.5 * G * location.w * md;
 	const vec3 acceleration = G * sum;
 
-	vec4 velocity = velocities[gl_GlobalInvocationID.x];
+	const vec4 last_location = locations1[gl_GlobalInvocationID.x];
+	const vec3 velocity = (location.xyz - last_location.xyz) / DELTA_T + DELTA_T * 0.5 * acceleration;
 
-	const float magnitude = length(velocity.xyz);
+	const float magnitude = length(velocity);
 	const float kinetic_energy = 0.5 * location.w * (magnitude * magnitude);
 	const float energy = kinetic_energy - potential_energy;
 
-	const float angular_momentum = cross(location.xyz, location.w * velocity.xyz).y;
+	const float angular_momentum = cross(location.xyz, location.w * velocity).y;
 
 	const float gravitational_force = location.w * length(acceleration);
 
