@@ -73,13 +73,15 @@ void main() {
 	const float potential_energy = 0.5 * G * location.w * md;
 	const vec3 acceleration = G * sum;
 
-	vec4 velocity = velocities[gl_GlobalInvocationID.x];
+	vec4 old_velocity = velocities[gl_GlobalInvocationID.x];
+	vec3 new_velocity = old_velocity.xyz + old_velocity * DELTA_T;
+	vec3 velocity = 0.5 * (old_velocity.xyz + new_velocity);
 
-	const float magnitude = length(velocity.xyz);
+	const float magnitude = length(velocity);
 	const float kinetic_energy = 0.5 * location.w * (magnitude * magnitude);
 	const float energy = kinetic_energy - potential_energy;
 
-	const float angular_momentum = cross(location.xyz, location.w * velocity.xyz).y;
+	const float angular_momentum = cross(location.xyz, location.w * velocity).y;
 
 	const float gravitational_force = location.w * length(acceleration);
 
