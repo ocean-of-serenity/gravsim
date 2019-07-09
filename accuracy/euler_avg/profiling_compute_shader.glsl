@@ -24,13 +24,19 @@ layout(std430, binding=2) buffer Velocities {
 	vec4 velocities[];
 };
 
+
+struct Result {
+	vec4 momentum_energy;
+	vec4 force;
+};
+
 layout(std430, binding=3) buffer Results {
-	vec4 results[];
+	Result results[];
 };
 
 
 shared vec4 shared_locations[LOCAL_WORKGROUP_SIZE];
-shared vec4 shared_results[LOCAL_WORKGROUP_SIZE];
+shared Result shared_results[LOCAL_WORKGROUP_SIZE];
 
 
 void main() {
@@ -73,24 +79,26 @@ void main() {
 	const float potential_energy = 0.5 * G * location.w * md;
 	const vec3 acceleration = G * sum;
 
-	vec4 old_velocity = velocities[gl_GlobalInvocationID.x];
-	vec3 new_velocity = old_velocity.xyz + old_velocity * DELTA_T;
-	vec3 velocity = 0.5 * (old_velocity.xyz + new_velocity);
+	vec4 velocity = velocities[gl_GlobalInvocationID.x];
 
-	const float magnitude = length(velocity);
+	const float magnitude = length(velocity.xyz);
 	const float kinetic_energy = 0.5 * location.w * (magnitude * magnitude);
 	const float energy = kinetic_energy - potential_energy;
 
-	const float angular_momentum = cross(location.xyz, location.w * velocity).y;
+	const vec3 angular_momentum = cross(location.xyz, location.w * velocity.xyz);
 
-	const float gravitational_force = location.w * length(acceleration);
+	const vec3 gravitational_force = location.w * acceleration;
 
-	shared_results[gl_LocalInvocationID.x] = vec4(energy, angular_momentum, gravitational_force, 0);
+	shared_results[gl_LocalInvocationID.x] = Result(
+			vec4(angular_momentum, energy),
+			vec4(gravitational_force, 0)
+	);
 	memoryBarrierShared();
 	barrier();
 	for( int stride = LOCAL_WORKGROUP_SIZE >> 1; stride > 0; stride >>= 1 ) {
 		if( gl_LocalInvocationID.x < stride && gl_GlobalInvocationID.x + stride < NUM_SPHERES ) {
-			shared_results[gl_LocalInvocationID.x] += shared_results[gl_LocalInvocationID.x + stride];
+			shared_results[gl_LocalInvocationID.x].momentum_energy += shared_results[gl_LocalInvocationID.x + stride].momentum_energy;
+			shared_results[gl_LocalInvocationID.x].force += shared_results[gl_LocalInvocationID.x + stride].force;
 		}
 		memoryBarrierShared();
 		barrier();

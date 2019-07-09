@@ -44,7 +44,10 @@ type Velocity struct {
 }
 
 type ConservedQuantities struct {
-	totalEnergy, angularMomentum, totalForce float32
+	angularMomentum mgl.Vec3
+	totalEnergy float32
+	totalForce mgl.Vec3
+	totalForceMagnitude float32
 }
 
 
@@ -56,11 +59,13 @@ const (
 
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
 
-	profilingLogLength = 1000
+	numFrames = 1000
+
+	numProfilingRuns = 100
 )
 
 
-var gravityProgram, gravityStartupProgram, profilingProgram, axisProgram, sphereProgram uint32
+var gravityProgram, profilingProgram, axisProgram, sphereProgram uint32
 var axisVertexArray, sphereVertexArray, sphereInstanceColorBuffer, sphereInstanceModelBuffer uint32
 var gravityLocationBuffer0, gravityLocationBuffer1, gravityVelocityBuffer, profileResultsBuffer uint32
 
@@ -81,7 +86,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("accuracy-verlet_shared_prefetch-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("accuracy-heun_avg-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -95,7 +100,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Verlet Shared Prefetch", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Heun Average", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -404,18 +409,18 @@ func main() {
 
 
 	// profiling loops
+	profilingLog = make([]ConservedQuantities, 3)
+	var numSpheres int = 32768
 	var localWorkGroupSize uint32 = 128
 	var globalWorkGroupSize uint32
-	for numSpheres := 2; numSpheres <= 262144 && !window.ShouldClose(); numSpheres *= 2 {
+	for run := 0; run < numProfilingRuns && !window.ShouldClose(); run++ {
 		globalWorkGroupSize = uint32(numSpheres) / localWorkGroupSize
 		if uint32(numSpheres) % localWorkGroupSize != 0 {
 			globalWorkGroupSize += 1
 		}
 
-		profilingLog = make([]ConservedQuantities, 3)
 
-
-		fmt.Printf("Spheres: %v\n", numSpheres)
+		fmt.Printf("Run: %v/%v\n", run + 1, numProfilingRuns)
 
 
 		{
@@ -430,24 +435,6 @@ func main() {
 				log.Fatalln(err)
 			}
 			gravityProgram, err = newComputeProgram(computeShader)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			gl.DeleteShader(computeShader)
-		}
-
-		{
-			gl.DeleteProgram(gravityStartupProgram)
-			computeShader, err := newComputeShader(
-				"gravity_startup_compute_shader.glsl",
-				localWorkGroupSize,
-				uint32(numSpheres),
-				globalWorkGroupSize,
-			)
-			if err != nil {
-				log.Fatalln(err)
-			}
-			gravityStartupProgram, err = newComputeProgram(computeShader)
 			if err != nil {
 				log.Fatalln(err)
 			}
@@ -550,20 +537,20 @@ func main() {
 		}
 
 
-		// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
+		// copy orb locations into shader storage buffers for use by the shaders
 		gl.DeleteBuffers(1, &gravityLocationBuffer0)
 		gl.CreateBuffers(1, &gravityLocationBuffer0)
-		gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, nil, 0)
-		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
-
-		// copy orb locations into shader storage buffers for use by the shaders
-		gl.DeleteBuffers(1, &gravityLocationBuffer1)
-		gl.CreateBuffers(1, &gravityLocationBuffer1)
 		{
 			// populate new buffer with data from data pointer of slice variable 'orbLocations'
 			shdr := (*reflect.SliceHeader)(unsafe.Pointer(&orbLocations))
-			gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
+			gl.NamedBufferStorage(gravityLocationBuffer0, numSpheres * 4 * 4, unsafe.Pointer(shdr.Data), 0)
 		}
+		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 0, gravityLocationBuffer0)
+
+		// no need to populate this buffer since the first compute dispatch stores the newly calculated positions here anyway
+		gl.DeleteBuffers(1, &gravityLocationBuffer1)
+		gl.CreateBuffers(1, &gravityLocationBuffer1)
+		gl.NamedBufferStorage(gravityLocationBuffer1, numSpheres * 4 * 4, nil, 0)
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 1, gravityLocationBuffer1)
 
 		// copy orb velocities into shader storage buffers for use by the compute shader
@@ -578,13 +565,8 @@ func main() {
 
 		gl.DeleteBuffers(1, &profileResultsBuffer)
 		gl.CreateBuffers(1, &profileResultsBuffer)
-		gl.NamedBufferStorage(profileResultsBuffer, int(globalWorkGroupSize) * 4 * 4, nil, gl.MAP_READ_BIT)
+		gl.NamedBufferStorage(profileResultsBuffer, int(globalWorkGroupSize) * 4 * 4 * 2, nil, gl.MAP_READ_BIT)
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, profileResultsBuffer)
-
-
-		gl.UseProgram(gravityStartupProgram)
-		gl.DispatchCompute(globalWorkGroupSize, 1, 1)
-		gl.UseProgram(0)
 
 
 		gl.UseProgram(profilingProgram)
@@ -595,23 +577,25 @@ func main() {
 
 		{
 			var shdr *reflect.SliceHeader
-			var results []mgl.Vec4
+			var results []ConservedQuantities
 			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
 			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
 			shdr.Len = int(globalWorkGroupSize)
 			shdr.Cap = int(globalWorkGroupSize)
 			for i, result := range results {
 				if i == 0 {
-					profilingLog[0].totalEnergy = result.X()
-					profilingLog[0].angularMomentum = result.Y()
-					profilingLog[0].totalForce = result.Z()
+					profilingLog[0].angularMomentum = result.angularMomentum
+					profilingLog[0].totalEnergy = result.totalEnergy
+					profilingLog[0].totalForce = result.totalForce
 				} else {
-					profilingLog[0].totalEnergy += result.X()
-					profilingLog[0].angularMomentum += result.Y()
-					profilingLog[0].totalForce += result.Z()
+					profilingLog[0].angularMomentum = profilingLog[0].angularMomentum.Add(result.angularMomentum)
+					profilingLog[0].totalEnergy += result.totalEnergy
+					profilingLog[0].totalForce = profilingLog[0].totalForce.Add(result.totalForce)
 				}
 			}
 			gl.UnmapNamedBuffer(profileResultsBuffer)
+
+			profilingLog[0].totalForceMagnitude += profilingLog[0].totalForce.Len() * 0.01
 		}
 
 
@@ -621,7 +605,7 @@ func main() {
 		var locationBuffer1Active bool
 		var progressBar string = ""
 		i := 0
-		for ; i < profilingLogLength && !window.ShouldClose(); i++ {
+		for ; i < numFrames && !window.ShouldClose(); i++ {
 			loopTimeStart = glfw.GetTime()
 
 
@@ -635,7 +619,7 @@ func main() {
 			frameCounter += 1
 			if timeSinceLastSecond > 1 {
 			    timeSinceLastSecond = 0
-				fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
+				fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, numFrames, frameCounter)
 			    frameCounter = 0
 			}
 
@@ -762,7 +746,7 @@ func main() {
 			"[%-40s] %4d/%4d Frames; %4d AVG FPS\n",
 			progressBar,
 			i,
-			profilingLogLength,
+			numFrames,
 			uint32(math.Round(1.0 / (sumTimePerFrame / float64(i)))),
 		)
 
@@ -775,53 +759,56 @@ func main() {
 
 		{
 			var shdr *reflect.SliceHeader
-			var results []mgl.Vec4
+			var results []ConservedQuantities
 			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
 			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
 			shdr.Len = int(globalWorkGroupSize)
 			shdr.Cap = int(globalWorkGroupSize)
 			for i, result := range results {
 				if i == 0 {
-					profilingLog[1].totalEnergy = result.X()
-					profilingLog[1].angularMomentum = result.Y()
-					profilingLog[1].totalForce = result.Z()
+					profilingLog[1].angularMomentum = result.angularMomentum
+					profilingLog[1].totalEnergy = result.totalEnergy
+					profilingLog[1].totalForce = result.totalForce
 				} else {
-					profilingLog[1].totalEnergy += result.X()
-					profilingLog[1].angularMomentum += result.Y()
-					profilingLog[1].totalForce += result.Z()
+					profilingLog[1].angularMomentum = profilingLog[1].angularMomentum.Add(result.angularMomentum)
+					profilingLog[1].totalEnergy += result.totalEnergy
+					profilingLog[1].totalForce = profilingLog[1].totalForce.Add(result.totalForce)
 				}
 			}
 			gl.UnmapNamedBuffer(profileResultsBuffer)
+
+			profilingLog[1].totalForceMagnitude += profilingLog[1].totalForce.Len() * 0.01
 		}
 
 
-		profilingLog[2].totalEnergy = float32(math.Abs(float64(profilingLog[0].totalEnergy - profilingLog[1].totalEnergy)))
-		profilingLog[2].angularMomentum = float32(math.Abs(float64(profilingLog[0].angularMomentum - profilingLog[1].angularMomentum)))
-		profilingLog[2].totalForce = float32(math.Abs(float64(profilingLog[0].totalForce - profilingLog[1].totalForce)))
+		profilingLog[2].angularMomentum = profilingLog[2].angularMomentum.Add(profilingLog[0].angularMomentum.Sub(profilingLog[1].angularMomentum).Mul(0.01))
+		profilingLog[2].totalEnergy += (profilingLog[0].totalEnergy - profilingLog[1].totalEnergy) * 0.01
 		for _, row := range profilingLog {
 			fmt.Println(row)
 		}
-
-
-		// write profiling measurements to filesystem
-		file, err := os.OpenFile(profilingFileName, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatalln("Could not open '%s': %s", profilingFileName, err)
-		}
-
-		_, err = fmt.Fprintf(
-			file,
-			"%v, %v, %v, %v\n",
-			numSpheres,
-			profilingLog[2].totalEnergy,
-			profilingLog[2].angularMomentum,
-			profilingLog[2].totalForce,
-		)
-		if err != nil {
-			log.Fatalln("Could not write to '%s': %s", profilingFileName, err)
-		}
-		file.Close()
 	}
+
+	// write profiling measurements to filesystem
+	file, err := os.OpenFile(profilingFileName, os.O_WRONLY | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalln("Could not open '%s': %s", profilingFileName, err)
+	}
+
+	_, err = fmt.Fprintf(
+		file,
+		"%v, %v, %v, %v, %v, %v, %v\n",
+		numSpheres,
+		mgl.Abs(profilingLog[2].angularMomentum.X()),
+		mgl.Abs(profilingLog[2].angularMomentum.Y()),
+		mgl.Abs(profilingLog[2].angularMomentum.Z()),
+		mgl.Abs(profilingLog[2].totalEnergy),
+		profilingLog[0].totalForceMagnitude,
+		profilingLog[1].totalForceMagnitude,
+	)
+	if err != nil {
+		log.Fatalln("Could not write to '%s': %s", profilingFileName, err)
+	}
+	file.Close()
 }
 
 

@@ -44,7 +44,10 @@ type Velocity struct {
 }
 
 type ConservedQuantities struct {
-	totalEnergy, angularMomentum, totalForce float32
+	angularMomentum mgl.Vec3
+	totalEnergy float32
+	totalForce mgl.Vec3
+	padding float32
 }
 
 
@@ -56,7 +59,7 @@ const (
 
 	G = 1.142602313e-4		// Lunar Masses, Solar Radii and days
 
-	profilingLogLength = 1000
+	numFrames = 1000
 )
 
 
@@ -81,7 +84,7 @@ var profilingFileName string
 
 func main() {
 	// misc setup
-	profilingFileName = fmt.Sprintf("accuracy-euler_shared_prefetch-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
+	profilingFileName = fmt.Sprintf("accuracy-euler_nos-%s.csv", time.Now().Format("2006_01_02_15_04_05"))
 
 
 	// initialize GLFW and OpenGL
@@ -95,7 +98,7 @@ func main() {
 	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
 //	glfw.WindowHint(glfw.OpenGLDebugContext, glfw.True)
 
-	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Shared Prefetch", nil, nil)
+	window, err := glfw.CreateWindow(initialWindowWidth, initialWindowHeight, "Gravity Simulation - Euler Number of Spheres", nil, nil)
 	if err != nil {
 		log.Fatalln("Failed to create window", err)
 	}
@@ -560,7 +563,7 @@ func main() {
 
 		gl.DeleteBuffers(1, &profileResultsBuffer)
 		gl.CreateBuffers(1, &profileResultsBuffer)
-		gl.NamedBufferStorage(profileResultsBuffer, int(globalWorkGroupSize) * 4 * 4, nil, gl.MAP_READ_BIT)
+		gl.NamedBufferStorage(profileResultsBuffer, int(globalWorkGroupSize) * 4 * 4 * 2, nil, gl.MAP_READ_BIT)
 		gl.BindBufferBase(gl.SHADER_STORAGE_BUFFER, 3, profileResultsBuffer)
 
 
@@ -572,20 +575,20 @@ func main() {
 
 		{
 			var shdr *reflect.SliceHeader
-			var results []mgl.Vec4
+			var results []ConservedQuantities
 			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
 			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
 			shdr.Len = int(globalWorkGroupSize)
 			shdr.Cap = int(globalWorkGroupSize)
 			for i, result := range results {
 				if i == 0 {
-					profilingLog[0].totalEnergy = result.X()
-					profilingLog[0].angularMomentum = result.Y()
-					profilingLog[0].totalForce = result.Z()
+					profilingLog[0].angularMomentum = result.angularMomentum
+					profilingLog[0].totalEnergy = result.totalEnergy
+					profilingLog[0].totalForce = result.totalForce
 				} else {
-					profilingLog[0].totalEnergy += result.X()
-					profilingLog[0].angularMomentum += result.Y()
-					profilingLog[0].totalForce += result.Z()
+					profilingLog[0].angularMomentum = profilingLog[0].angularMomentum.Add(result.angularMomentum)
+					profilingLog[0].totalEnergy += result.totalEnergy
+					profilingLog[0].totalForce = profilingLog[0].totalForce.Add(result.totalForce)
 				}
 			}
 			gl.UnmapNamedBuffer(profileResultsBuffer)
@@ -598,7 +601,7 @@ func main() {
 		var locationBuffer1Active bool
 		var progressBar string = ""
 		i := 0
-		for ; i < profilingLogLength && !window.ShouldClose(); i++ {
+		for ; i < numFrames && !window.ShouldClose(); i++ {
 			loopTimeStart = glfw.GetTime()
 
 
@@ -612,7 +615,7 @@ func main() {
 			frameCounter += 1
 			if timeSinceLastSecond > 1 {
 			    timeSinceLastSecond = 0
-				fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, profilingLogLength, frameCounter)
+				fmt.Printf("[%-40s] %4d/%4d Frames; %4d FPS\r", progressBar, i + 1, numFrames, frameCounter)
 			    frameCounter = 0
 			}
 
@@ -739,7 +742,7 @@ func main() {
 			"[%-40s] %4d/%4d Frames; %4d AVG FPS\n",
 			progressBar,
 			i,
-			profilingLogLength,
+			numFrames,
 			uint32(math.Round(1.0 / (sumTimePerFrame / float64(i)))),
 		)
 
@@ -752,29 +755,29 @@ func main() {
 
 		{
 			var shdr *reflect.SliceHeader
-			var results []mgl.Vec4
+			var results []ConservedQuantities
 			shdr = (*reflect.SliceHeader)(unsafe.Pointer(&results))
 			shdr.Data = (uintptr)(gl.MapNamedBuffer(profileResultsBuffer, gl.READ_ONLY))
 			shdr.Len = int(globalWorkGroupSize)
 			shdr.Cap = int(globalWorkGroupSize)
 			for i, result := range results {
 				if i == 0 {
-					profilingLog[1].totalEnergy = result.X()
-					profilingLog[1].angularMomentum = result.Y()
-					profilingLog[1].totalForce = result.Z()
+					profilingLog[1].angularMomentum = result.angularMomentum
+					profilingLog[1].totalEnergy = result.totalEnergy
+					profilingLog[1].totalForce = result.totalForce
 				} else {
-					profilingLog[1].totalEnergy += result.X()
-					profilingLog[1].angularMomentum += result.Y()
-					profilingLog[1].totalForce += result.Z()
+					profilingLog[1].angularMomentum = profilingLog[1].angularMomentum.Add(result.angularMomentum)
+					profilingLog[1].totalEnergy += result.totalEnergy
+					profilingLog[1].totalForce = profilingLog[1].totalForce.Add(result.totalForce)
 				}
 			}
 			gl.UnmapNamedBuffer(profileResultsBuffer)
 		}
 
 
-		profilingLog[2].totalEnergy = float32(math.Abs(float64(profilingLog[0].totalEnergy - profilingLog[1].totalEnergy)))
-		profilingLog[2].angularMomentum = float32(math.Abs(float64(profilingLog[0].angularMomentum - profilingLog[1].angularMomentum)))
-		profilingLog[2].totalForce = float32(math.Abs(float64(profilingLog[0].totalForce - profilingLog[1].totalForce)))
+		profilingLog[2].angularMomentum = profilingLog[0].angularMomentum.Sub(profilingLog[1].angularMomentum)
+		profilingLog[2].totalEnergy = profilingLog[0].totalEnergy - profilingLog[1].totalEnergy
+		profilingLog[2].totalForce = profilingLog[0].totalForce.Sub(profilingLog[1].totalForce)
 		for _, row := range profilingLog {
 			fmt.Println(row)
 		}
@@ -788,11 +791,14 @@ func main() {
 
 		_, err = fmt.Fprintf(
 			file,
-			"%v, %v, %v, %v\n",
+			"%v, %v, %v, %v, %v, %v, %v\n",
 			numSpheres,
-			profilingLog[2].totalEnergy,
-			profilingLog[2].angularMomentum,
-			profilingLog[2].totalForce,
+			mgl.Abs(profilingLog[2].angularMomentum.X()),
+			mgl.Abs(profilingLog[2].angularMomentum.Y()),
+			mgl.Abs(profilingLog[2].angularMomentum.Z()),
+			mgl.Abs(profilingLog[2].totalEnergy),
+			profilingLog[0].totalForce.Len(),
+			profilingLog[1].totalForce.Len(),
 		)
 		if err != nil {
 			log.Fatalln("Could not write to '%s': %s", profilingFileName, err)
