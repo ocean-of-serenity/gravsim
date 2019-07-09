@@ -1,0 +1,8 @@
+
+accuracy/*_nos and accuracy/*_avg csv file layout:
+number of spheres, angular momentum x, angular momentum y, angular momentum z, total energy, total force beginning, total force end
+
+performance csv file layout:
+global workgroup size, local workgroup size, number of spheres, compute dispatch duration, sphere draw call duration
+
+
