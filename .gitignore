@@ -56,5 +56,5 @@ dkms.conf
 tags
 *.zip
 *.png
-*.csv
+# *.csv
 
