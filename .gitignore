@@ -55,6 +55,6 @@ dkms.conf
 *.swp
 tags
 *.zip
-*.png
+# *.png
 # *.csv
 
