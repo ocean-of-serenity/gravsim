@@ -819,8 +819,7 @@ func main() {
 
 	_, err = fmt.Fprintf(
 		file,
-		"%v, %v, %v, %v, %v, %v, %v\n",
-		numSpheres,
+		"%v, %v, %v, %v, %v, %v\n",
 		mgl.Abs(profilingLog[2].angularMomentum.X()),
 		mgl.Abs(profilingLog[2].angularMomentum.Y()),
 		mgl.Abs(profilingLog[2].angularMomentum.Z()),

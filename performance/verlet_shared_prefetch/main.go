@@ -737,8 +737,7 @@ func main() {
 			}
 
 			_, err = fmt.Fprintln(file, fmt.Sprintf(
-				"%v, %v, %v, %v, %v",
-				globalWorkGroupSize,
+				"%v, %v, %v, %v",
 				localWorkGroupSize,
 				numSpheres,
 				float64(profilingLog.forceCompute) / profilingLogLength,
